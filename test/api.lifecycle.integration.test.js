@@ -66,6 +66,13 @@ async function createBookingAndReturn({ start = "2035-01-01T10:00:00Z", end = "2
   });
   expect(assignment.statusCode).toBe(200);
 
+  const deposit = await app.inject({
+    method: "POST", url: `/api/v1/bookings/${bookingItemId}/deposit-hold`, headers: headers(staffToken, "staff"),
+    payload: { amountCents: 1_000, paymentReference: `hold:${id()}` },
+  });
+  expect(deposit.statusCode).toBe(200);
+  const holdJournalEntryId = deposit.json().transactionId;
+
   const outboundInspectionId = id();
   await asStaff(async (client) => {
     await client.query("SELECT app.start_inspection($1,$2,NULL,$3,'outbound')", [outboundInspectionId, bookingItemId, machineId]);
@@ -88,7 +95,7 @@ async function createBookingAndReturn({ start = "2035-01-01T10:00:00Z", end = "2
     payload: { bookingItemId, inboundInspectionId, returnedAt: end, fuelChargeCents: 100, excessMileageCents: 50 },
   });
   expect(returned.statusCode).toBe(200);
-  return { bookingItemId, tripId };
+  return { bookingItemId, tripId, holdJournalEntryId };
 }
 
 beforeAll(async () => {
@@ -133,12 +140,11 @@ describe("Tier 3 lifecycle perimeter", () => {
     const quote = await app.inject({ method: "POST", url: "/api/v1/quotes", headers: headers(staffToken, "staff"), payload: { categoryLocationId, rentalPeriod: { start: "2035-01-01T10:00:00Z", end: "2035-01-03T10:00:00Z" } } });
     expect(quote.statusCode).toBe(200);
     expect(quote.json().totalCents).toBe("1000");
-    const { bookingItemId, tripId } = await createBookingAndReturn();
+    const { bookingItemId, tripId, holdJournalEntryId } = await createBookingAndReturn();
     const telemetry = await app.inject({ method: "POST", url: "/api/v1/telemetry/ingest", headers: headers(deviceToken, "device"), payload: { deviceId, machineId, recordedAt: "2035-01-01T12:00:00Z", latitude: 40.7608, longitude: -111.891, speedMph: 25, engineHours: 85, fuelLevelBp: 7500, rawPayload: { source: "lifecycle" } } });
     expect(telemetry.statusCode).toBe(201);
     const frame = await asStaff((client) => client.query("SELECT latitude_microdegrees,fuel_pct FROM app.telemetry_frame WHERE machine_id=$1 ORDER BY recorded_at DESC LIMIT 1", [machineId]));
     expect(frame.rows[0]).toMatchObject({ latitude_microdegrees: 40760800, fuel_pct: 75 });
-    const holdJournalEntryId = await createHold();
     const settlement = await app.inject({ method: "POST", url: "/api/v1/operations/settle", headers: headers(staffToken, "staff"), payload: { bookingItemId, holdJournalEntryId, capturedCents: 250, releasedCents: 750, excessReceivableCents: 0, externalRef: `settle:${id()}` } });
     expect(settlement.statusCode).toBe(200);
     const balance = await asStaff((client) => client.query("SELECT COALESCE(sum(CASE direction WHEN 'debit' THEN amount_cents ELSE -amount_cents END),0)::bigint AS balance FROM app.ledger_posting"));
@@ -148,8 +154,7 @@ describe("Tier 3 lifecycle perimeter", () => {
   });
 
   it("serializes competing settlement requests", async () => {
-    const { bookingItemId } = await createBookingAndReturn({ start: "2035-02-01T10:00:00Z", end: "2035-02-03T10:00:00Z" });
-    const holdJournalEntryId = await createHold();
+    const { bookingItemId, holdJournalEntryId } = await createBookingAndReturn({ start: "2035-02-01T10:00:00Z", end: "2035-02-03T10:00:00Z" });
     const payload = { bookingItemId, holdJournalEntryId, capturedCents: 100, releasedCents: 900, excessReceivableCents: 0 };
     const responses = await Promise.all([1, 2].map(() => app.inject({ method: "POST", url: "/api/v1/operations/settle", headers: headers(staffToken, "staff"), payload })));
     expect(responses.filter((response) => response.statusCode === 200)).toHaveLength(1);
@@ -162,7 +167,7 @@ describe("Tier 3 lifecycle perimeter", () => {
     const notReturned = await app.inject({ method: "POST", url: "/api/v1/operations/settle", headers: headers(staffToken, "staff"), payload: { bookingItemId, holdJournalEntryId: id(), capturedCents: 0, releasedCents: 0, excessReceivableCents: 0 } });
     expect(notReturned.statusCode).toBe(409); expect(notReturned.json().code).toBe("TRIP_NOT_RETURNED");
     const returned = await createBookingAndReturn({ start: "2036-02-01T10:00:00Z", end: "2036-02-03T10:00:00Z" });
-    const holdJournalEntryId = await createHold();
+    const holdJournalEntryId = returned.holdJournalEntryId;
     const excessive = await app.inject({ method: "POST", url: "/api/v1/operations/settle", headers: headers(staffToken, "staff"), payload: { bookingItemId: returned.bookingItemId, holdJournalEntryId, capturedCents: 1001, releasedCents: 0, excessReceivableCents: 1 } });
     expect(excessive.statusCode).toBe(422); expect(excessive.json().code).toBe("SETTLEMENT_EXCEEDS_HOLD");
     const mismatched = await app.inject({ method: "POST", url: "/api/v1/telemetry/ingest", headers: headers(deviceToken, "device"), payload: { deviceId, machineId: id(), recordedAt: "2036-01-01T12:00:00Z", latitude: 0, longitude: 0, speedMph: 0, engineHours: 1, fuelLevelBp: 100 } });
