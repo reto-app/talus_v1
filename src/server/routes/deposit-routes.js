@@ -1,0 +1,2 @@
+import { withTenantTransaction } from "../../db/transaction.js";import{authorizeDepositHoldWorkflow}from"../../services/deposit-service.js";
+export async function depositRoutes(app,{pool}){app.post("/api/v1/bookings/:bookingItemId/deposit-hold",async(r,reply)=>{if(!["staff","api"].includes(r.talusContext.actorKind))return reply.forbidden();return reply.code(200).send(await withTenantTransaction(pool,r.talusContext,c=>authorizeDepositHoldWorkflow(c,{bookingItemId:r.params.bookingItemId,...r.body})))})}

@@ -1,0 +1,480 @@
+TALUS — BUILD INSTRUCTIONS (MVP V1, DOC V2)
+This is a single, self-contained document. Everything needed to build Talus is below.
+Instructions for the Builder
+Read this entire document before writing anything — a constraint in a later section can change how an earlier-looking task should be built.
+
+This is a from-scratch build. Work in two phases, and don't skip ahead from one to the next.
+
+Phase 1 — Architecture (no implementation code yet). Produce a technical architecture document that translates this document into: a data model for each concept in §2; clear module boundaries and interface contracts, so each module can be built and tested independently; a dependency graph and build order (Foundation and Booking Core, §3, come first — almost everything else depends on them; most remaining modules can build in parallel once Booking Core's contract is stable); how the guarantees in §4 and the lifecycle model in §6 will be implemented; how automatic machine assignment with operator override (§3) will work; and a recommended tech stack, with reasoning. Stop after Phase 1 and present the architecture before writing any implementation code.
+
+Phase 2 — Modular build. Once the architecture is approved, build one module at a time, in dependency order. For each module: write its acceptance tests first — including concurrency and tenant-isolation tests run against a real database, not mocked — build only that module, then present the result before moving to the next one.
+
+Non-negotiable standards, every module: money as integer cents, percentages as basis points, no floating-point arithmetic in any pricing path; rental length as calendar days in the tenant's own timezone; availability always derived on read, never stored as its own table; no public-facing database role gets any write privilege — every write goes through an explicit, auditable function; never invent a telemetry value; a message is "sent" only once a provider has actually confirmed it; every material action is recorded through the unified audit architecture in §30.
+
+Do not build yet: see §32. Do not build these patterns at all: see §33. Open questions: see §35 — where one blocks an implementation detail, don't silently decide it. Build a reasonable placeholder, flag it clearly as a TODO tied to the specific question number, and keep moving.
+
+
+1. Product Vision
+Powerful underneath. Simple on the surface.
+
+An operator should be able to understand the state of their bookings, customers, fleet, rentals, maintenance, vehicle telemetry, incidents, and communications without needing technical expertise. Complexity lives inside the system, never pushed onto the operator.
+
+Three principles govern every feature below:
+
+Multi-tenant by construction. One system serves every operator, isolated by the data layer itself, not by convention. Onboarding a new operator should be a data operation, not an engineering task.
+Honest about what it doesn't know. Unknown is a real, renderable state — for availability beyond a booking window, for a signal a piece of hardware doesn't support, for a value nobody has recorded yet. Never invent a value to fill a gap; distinguish automatically captured data, manually entered data, and unavailable data everywhere this distinction matters.
+A working V1, not a platform for every future idea. The target is a real powersports rental operator running its actual day-to-day business on Talus — configuring its fleet and policies, taking bookings, assigning machines, running inspections, handling payment, and closing out rentals — not a system that anticipates every feature a future operator might eventually want. Where this document defers something, that's deliberate. Don't build it because it seems easy or because it would be nice to have.
+
+
+2. Core Concepts
+Tenant — one rental operator: brand, locations, fleet, rates, policies, own payment account.
+Location — a physical place a tenant operates from. A tenant may have more than one. Machines, availability, and pickup belong to a specific location (§21).
+Staff — owner / manager / staff, tied to a tenant.
+Customer — the person who made the booking. Tracked directly from the booking's own contact details (§9) — never derived from or dependent on waiver data.
+Participant / Rider — a person taking part in the rental who may not be the customer who booked it. Talus tracks participants only through the waiver process (§9, §10) in V1 — there is no separate participant-management subsystem.
+Rental Product / Category — the thing a customer actually books (e.g., "UTV," "Snowmobile"). This is the unit availability and capacity are counted against.
+Machine — a specific physical unit (§20), assigned to a booking item automatically rather than chosen by the customer.
+Booking — one customer order: one checkout flow, one payment, one waiver flow, potentially many line items, at one pickup location.
+Booking Item — one line of a booking, referencing a product/category, with a machine attached shortly before pickup. Carries its own operational lifecycle, separate from the booking's overall lifecycle (§6).
+Machine Occupancy — the mechanism that guarantees a physical machine is never double-assigned to overlapping rentals.
+Inspection — a pre-rental or post-rental record for a booking item (§11).
+Incident — a record of damage or an incident associated with a booking item (§12).
+Price Snapshot — the frozen pricing terms a booking actually agreed to, preserved regardless of later catalog or policy changes (§13).
+Promo Code — a tenant-owned, customer-facing discount code (§14), distinct from an affiliate/referral code.
+Waiver Document / Waiver Signature — versioned, immutable agreement text and its signatures.
+Payment Ledger — an append-only record of every money movement.
+Notification — an outbox entry for a customer message, spanning email and SMS.
+Device / Telemetry Event / Machine Position / Geofence / Geofence Breach — the fleet-visibility and vehicle-data pipeline, fed by Talus's own hardware.
+Affiliate / Referral / Commission — attribution and payout tracking for external partners.
+Audit Event — a first-class, immutable record of a material action taken anywhere in the system (§30).
+Tenant Configuration — the explicit set of policies and settings that vary per tenant (§29).
+Trip — the record of one booking item’s checkout-to-return, binding a machine’s device data to the rental it occurred during (§19A).
+Operating Limit / Violation — a tenant-configured threshold, and the record of a Trip crossing it (§19A.1).
+
+
+3. Booking Model: Category-First With Automatic Machine Assignment
+This is the architectural core of the system. Almost everything else depends on it.
+
+A customer books a rental product/category at a specific pickup location — never a specific serialized machine.
+The system automatically assigns the specific physical machine, normally shortly before pickup rather than at the moment of booking. The lead time before pickup at which assignment runs must be configurable per tenant, not hardcoded.
+Assignment selects an eligible machine based on: category, location, operational state, current occupancy, any active maintenance block, and any other relevant eligibility constraint. Refine the exact rule set during architecture.
+An operator can override the automatic assignment at any point — swapping a machine for a breakdown, a scheduling conflict, or any other operational reason. Override is an exception path, not the normal one.
+If there are not enough eligible machines to assign — because staff have knowingly overbooked the category (§4) — the system must clearly surface the unresolved assignment problem to staff. It must never invent an assignment or violate the machine-occupancy guarantee to make the numbers work.
+Availability answers "how many units of this category are free at this location on these dates," not "is this specific machine free."
+Pricing is keyed to the category/product, not to a specific machine's individual rate.
+The catalog presents products/categories as the primary browsing and pricing unit. Individual machines are an operational detail the customer never has to think about.
+The guarantee that a physical machine is never double-booked (§4) applies in full at the point a machine is actually assigned — that guarantee doesn't go away under this model, it just moves later in the lifecycle.
+
+
+4. Availability, Capacity & Overbooking
+Build two separate guarantees — they operate at different points in the lifecycle and must not be conflated:
+
+Category/product capacity, at a given location, can be knowingly exceeded. Authorized staff can accept a reservation for a product/category beyond its current confirmed capacity, with a clear warning at the point of doing it, and an audited record of who did it and when (§30). Customer-facing availability must always continue to reflect true calculated capacity — an override must never be presented to a customer as normal open inventory.
+A physical machine can never be double-assigned. Regardless of how much category-level overbooking has occurred, the system must guarantee, at the database level, that the same physical machine is never handed to two customers for overlapping dates. This is a hard, structural guarantee — not application logic that could be bypassed by a bug or an edge case.
+
+These two rules don't conflict: category capacity is a business-level number staff can knowingly exceed; machine-level occupancy is a hard guarantee enforced only once a specific unit is actually assigned. If overbooking leaves more reservations than machines at assignment time, that's a staffing problem to surface (§3) — never a reason to relax the occupancy guarantee.
+
+
+5. Core Booking & Pricing Rules (Non-Negotiable)
+Money is integer cents; percentages are basis points. No floating-point arithmetic in any pricing path.
+Rental length is calendar days in the tenant's own timezone, never a subtraction of two timestamps.
+Availability is always derived on read; never store it as its own table.
+A machine's operational state (in_service / maintenance / offline / retired) is only ever set by an explicit action — never inferred from a booking.
+Availability beyond a tenant's configured booking window renders as "call us" — never silently as open or booked.
+A booking being confirmed and a confirmation message being sent are two different facts, and the system must never conflate them.
+
+
+6. Booking & Booking-Item Lifecycle
+A booking has its own overall lifecycle. A booking item — one machine's slice of that booking — has its own separate operational lifecycle. These are not the same thing, and the system must track both. A booking containing three machines must be able to represent one machine returned while two are still checked out, with the overall booking still active.
+
+Booking lifecycle: draft → pending_payment → confirmed → (active while items progress) → closed, with cancelled and no_show branches. This must be enforced as data — a defined table of legal transitions — not scattered conditional logic, so an illegal transition fails even if application code gets it wrong. A booking reaches closed only once every one of its booking items has reached a terminal state.
+
+Booking-item lifecycle: a suggested state model — refine exact naming during architecture, but preserve the relationships described here — is reserved → assigned → ready → checked_out → returned → closed, plus exception states such as cancelled and no_show at the item level. Each item progresses independently within a booking.
+
+Terminology, used consistently everywhere in this document, in the operator app, and in the eventual data model:
+
+Assignment — a specific machine is attached to a booking item (§3).
+Pre-rental inspection — the inspection performed before a machine leaves with a customer (§11).
+Checkout / rental start — the machine physically leaves with the customer; the booking item becomes checked_out.
+Return — the machine physically comes back; the booking item becomes returned. (This is the correct term — a machine is returned, not "checked back out.")
+Post-rental inspection — the inspection performed after a machine comes back (§11).
+Booking-item close — an individual item is fully wrapped up: returned, inspected, any incident documented, and financially reconciled.
+Booking close — the overall booking is wrapped up, once every item on it is closed.
+
+V1 does not need a separate "customer arrival / check-in" state distinct from the above — a customer's arrival for pickup is simply what triggers the pre-rental inspection and checkout for their booking items; arrival for drop-off is what triggers return and the post-rental inspection.
+
+
+7. Booking Modifications
+Authorized staff must be able to modify an existing booking, including: dates/times, quantity, rental product/category, add-ons, customer/contact details, and other normal booking details.
+
+Every modification must go through the same authoritative booking, pricing, availability, and machine-occupancy rules as a new booking — a modification must never bypass the system's guarantees.
+If a modification affects a machine assignment, the system must automatically determine whether the existing assignment is still valid, and reassign if necessary, following the same rules as initial assignment (§3).
+Financial differences from a modification must be handled through the payment ledger (§15) — never by overwriting a historical amount. The original price snapshot (§13) is preserved; a modification creates a new pricing revision on top of it.
+Every material modification must be recorded through the unified audit architecture (§30).
+Which lifecycle states a booking or booking item must be in to allow a given kind of modification is an architecture decision — determine and explicitly document the restrictions during architecture, rather than scattering them through application logic.
+
+
+8. Rental Extensions
+Authorized staff must be able to extend an active rental. Before accepting an extension, the system must check: category-level capacity implications, the assigned machine's future occupancy, any applicable booking rules (§26), and pricing implications.
+
+An extension must never cause a physical machine to become double-assigned — the occupancy guarantee (§4) applies here exactly as it does to a new booking.
+Any additional amount owed from an extension goes through the normal pricing and ledger architecture (§13, §15) — it is a new pricing revision, not an edit to the original price snapshot.
+Every extension must be recorded through the unified audit architecture (§30).
+A rental that has gone overdue without an extension is a separate concern — see §23.
+
+
+9. Customer & Participant Information
+The booking itself collects the basic contact information needed to operate the reservation: name, email, and phone, at minimum, for the person making the booking (the customer).
+The Customer record must never be dependent on information being extracted from a waiver — it's collected directly as part of booking.
+Waivers may collect additional information about other riders/participants where required by the operator or by applicable policy (§10). This is the only place V1 tracks participant-level information — there is no separate participant/driver-management subsystem in V1.
+Exact legally required fields vary by jurisdiction. Do not hardcode assumptions about what a waiver must or may legally contain — keep required waiver fields tenant-configurable (§29).
+The architecture must not prevent participant-level functionality (e.g., a full rider-management system, per-rider machine assignment) from being added later — it simply isn't built in V1.
+
+
+10. Waivers
+One waiver flow is attached to each booking.
+The default expectation is that each rider/participant signs their own waiver individually. Waiver signing behavior must remain tenant-configurable, since requirements vary by jurisdiction and operator — the architecture must support both individual per-participant signatures and an alternative tenant-configured signing arrangement (e.g., one signature for the whole party) where legally or operationally appropriate. Do not hardcode one universal rule.
+Waiver text lives as versioned, immutable data — never as a constant in application code. Every signature is checked against the exact version and hash of the text that was actually signed, regardless of which signing mode a tenant uses.
+Whether a damage waiver is sold at all must be configurable and default to off — selling one is regulated as insurance in some jurisdictions.
+The waiver link must be shareable with the customer by both email and SMS (§17).
+
+
+11. Inspections — Pre-Rental & Post-Rental
+Vehicle inspections are part of V1.
+
+Support both a pre-rental (checkout) inspection and a post-rental (return) inspection. Whether either is required is configurable per tenant — an operator may require both, make one optional, or configure the workflow to fit its business.
+Keep the staff-facing workflow deliberately simple: staff primarily take or upload photos and enter notes when necessary.
+The system must automatically associate and record everything it already reliably knows without staff re-entering it: tenant, location, booking, booking item, assigned machine, the staff member performing the inspection, and the timestamp.
+Where a trustworthy source exists for values like mileage, engine hours, or fuel level (from telemetry — §19), the system should auto-populate them. Where the installed hardware cannot provide a value, the system must never fabricate or estimate it. If a value is operationally required but unavailable automatically, support manual entry as a fallback.
+Every inspection record must clearly distinguish automatically captured data, manually entered data, and data that was unsupported or unavailable at the time.
+Inspection records must be historically immutable or auditable — once recorded, a record reflects what was actually observed at that point in time.
+Start and end odometer, engine hours, and fuel level, where supported, are drawn from the Trip’s own boundary readings (§19A) rather than a general machine lookup, so that a pre-rental and a post-rental inspection reconcile against the same rental.
+
+
+12. Incident & Damage Records
+Incident and damage documentation is part of V1.
+
+Staff must be able to manually create an incident associated with: a booking, a booking item, a machine, the customer, a timestamp, location if available, photos, notes, an estimated damage amount if known, and a status/resolution.
+Telemetry is never required to create an incident — a staff member observing damage or an incident is sufficient on its own.
+The system must never label something a crash, rollover, or other automatically detected event unless a validated detection system actually produced that determination (§19). A manually logged incident is just that — a manually logged incident.
+Automated damage charging is out of scope for V1. An incident can carry an estimated damage amount, but converting that into an actual charge against the customer is a manual, staff-driven action for now, not an automated one.
+
+
+13. Pricing, Taxes, Fees, Deposits & Price Snapshot
+V1 must support a clear financial breakdown that separately represents: rental subtotal, multi-day discounts, add-ons, promotional discounts (§14), taxes, mandatory fees, platform/service fees where applicable, a refundable security deposit, and the total amount due. Use integer cents and basis points throughout, per §5.
+
+Deposits remain financially distinct from rental revenue at every stage — this was already true of the ledger model (§15) and applies equally to this breakdown.
+
+Immutable price snapshot: once a booking is confirmed, it must retain the pricing terms actually agreed to — rate, duration, discounts, promo code, add-ons, taxes, fees, deposit, and total. Changing current catalog rates or tenant pricing policy later must never change a historical booking's total. A booking modification (§7) or extension (§8) may create a new pricing revision layered on top, but must never erase the previous financial history — the full sequence of what was agreed to, and when, must remain reconstructable.
+
+Do not choose a tax provider yet unless required — architect tax calculation as a replaceable component, since this decision can be made later without changing the rest of the pricing model.
+
+
+14. Promo / Discount Codes
+Customer-facing promotional codes are part of V1. Keep this deliberately simple — do not build a general-purpose promotion or pricing-rules engine.
+
+At minimum, support: tenant-owned promo codes, active/inactive state, validity dates where needed, a fixed-amount or percentage discount, and reasonable usage restrictions where required.
+
+Promo codes and affiliate/referral codes (§27) are separate concepts, even though a business might use both together on the same booking. Do not conflate customer discounts with affiliate attribution. Discount calculations use the same integer-cent/basis-point standards as everything else (§5).
+
+
+15. Payments
+Build on an append-only ledger as the single source of truth for every money movement. Booking balances are derived from the ledger, never stored independently of it.
+Hold deposits separately from rental revenue.
+Check refund math against the ledger — never trust a refund calculation on its own.
+The payment processor is not yet selected, and the exact payment timing model (pay-in-full only, a deposit-now/pay-later split, or another arrangement) is also undecided — payment will likely happen online, but do not hardcode V1 to any one model. Build the accounting model so it does not assume a specific processor's API or fund-routing mechanism; treat the actual processor integration and the final payment-timing policy as swappable layers behind the ledger. This remains an open decision — see §35.
+Payment idempotency: any eventual payment-provider adapter must support idempotent operations, provider transaction/event IDs, duplicate-webhook protection, failed payment attempts, refund identifiers, and reconciliation against the Talus ledger, with room for representing disputes/chargebacks later. Receiving the same provider event more than once must never duplicate a money movement.
+Leave the platform fee model and cancellation refund tiers as configurable, clearly-placeholder decisions, never presented to a customer as settled policy until decided — see §35.
+
+
+16. Booking Catalog & Embeddable Widget
+Operators must be able to manage everything a customer sees — categories, pricing, add-ons, availability, visibility — with no code changes.
+The booking experience must be embeddable on an operator's own website, and must share the exact same pricing and availability logic as the standalone booking site. Never build two separate implementations that could quote a customer two different numbers.
+The catalog's primary unit is the product/category (§3) — individual machines are never a customer-facing choice.
+
+
+17. Customer Communication — Email & SMS
+Build both channels: automated email confirmations, and SMS as a conversation thread attached to a booking, visible to staff without switching to a separate phone or app.
+The waiver link (§10) must be deliverable by both email and SMS.
+Treat every message as an outbox entry: queued before it's sent, and marked sent only once a provider has actually confirmed delivery. This discipline applies identically to both channels — a screen must never claim a delivery it can't back up.
+Plan for these as real implementation costs, not reasons to cut the requirement: US carrier registration (A2P 10DLC) for SMS has real lead time and should start early; SMS requires its own consent-capture and opt-out (STOP) handling, separate from carrier registration; multi-tenant SMS needs a defined sending-identity strategy (a shared number pool with tenant-level routing, or per-tenant number provisioning).
+
+
+18. Operator App
+Build these surfaces:
+
+Today board — pickups, returns, and anything overdue (§23).
+Bookings — list and detail view, including per-item status for multi-machine bookings (§6), booking modification (§7), and rental extension (§8) actions.
+Calendar — a machine-by-day view.
+Fleet — machine state and status (§20).
+Customer history — a customer's prior bookings, incidents, waiver status, staff notes, and any warning/do-not-rent flag (§24).
+Reports — utilization and other operational metrics.
+
+Roles are owner > manager > staff. Gate sensitive actions — rate changes, fleet-state changes, deposit captures, warning/do-not-rent flag changes — to manager or above.
+
+The app must support: reviewing and, when needed, overriding automatic machine assignments (§3); the pre-rental and post-rental inspection workflow (§11); logging an incident (§12); the SMS conversation thread (§17) attached to each booking; and clear visibility into any unresolved assignment conflict arising from an overbooked category (§3, §4).
+
+The app must also surface Trip records and any operating limit violations, per §19A.3.
+
+
+19. Fleet & Vehicle Telemetry — CAN, GPS, Inclinometer
+Ingest and display GPS position (latitude, longitude, heading, speed), CAN-bus signals, and inclinometer/orientation data, sourced from Talus's own proprietary hardware.
+Hardware capability will vary — by hardware version, and potentially by vehicle make/model even on the same hardware version. The system must track what a specific machine's installed hardware can actually report, and must never guess or invent a value it can't provide. Distinguish three states clearly: "not supported by this hardware," "supported but no recent reading," and "here is the current value, last updated at X." This is the same distinction inspections (§11) must draw between automatic, manual, and unavailable data — apply it consistently.
+Where telemetry provides a trustworthy reading for mileage, engine hours, or fuel level, it is the preferred source for auto-populating an inspection (§11).
+Build geofencing: per-category boundaries, with breach detection that raises one alert per breach — not one per raw position frame. This is passive visibility and alerting only.
+Remote hardware commands are out of scope for this build, including any reduced-performance or "limp" mode. If ever pursued, this must be designed as its own dedicated safety-critical subsystem — explicit authorization, command audit history, device acknowledgment, retry/failure handling, protection against stale commands — never as a casual extension of passive geofencing.
+Detection algorithms are out of scope for this build — donut detection, crash detection, rollover detection. Build the event architecture to support them later, and capture and display raw signals (including inclinometer data) now, but never label anything "crash detected" or "donut detected" without an actual, validated detection mechanism behind it. A manually logged incident (§12) is always available regardless of what telemetry can or can't detect.
+Carry provenance — source, device, detection method and version — with the data end to end. This data may eventually support a real dispute.
+Simulated or placeholder data must never be able to look real — visually and textually distinct everywhere it appears, never presented as a live reading.
+A geofence breach, in addition to raising an alert, is recorded as a violation against the open Trip for that machine (§19A.1).
+
+
+19A. Trip Records: Binding Device Data to a Booking
+Telemetry (§19) is captured against a machine. A Trip is the record that binds that data, permanently, to the rental it happened during. Without it, a rental’s data is only a join somebody has to remember to write correctly, and the dispute evidence §19 describes does not actually exist as a thing anyone can retrieve.
+
+A Trip is a first-class concept. One Trip per booking item, per checkout. It opens when the booking item moves to checked_out (§6) and closes when the item moves to returned. It is bound at open time to tenant, booking, booking item, machine, assigned device, and the staff member who performed checkout.
+Binding is permanent and survives change. A closed Trip is immutable. Reassigning the machine (§3), transferring it to another location (§21), reclassifying its category (§20), retiring it, or swapping its hardware must never alter or orphan a historical Trip. This is the immutable price snapshot principle (§13) and the tenant configuration rule (§29) applied to fleet data: history reflects what was true when it happened.
+Every telemetry event lands on both. A telemetry event is written against the machine as it is today, and additionally against the open Trip for that machine, if one is open. Events arriving while no Trip is open, such as a machine moving on the lot or a maintenance test ride, belong to the machine only. Never reconstruct a Trip from an inferred window after the fact.
+Late and offline data. Devices lose coverage. A device must buffer locally and backfill on reconnect, and a backfilled event is assigned to the Trip that was open at the event’s own recorded time, not the time it arrived. A Trip that closes before its data has finished arriving must accept late events, show its summary as still settling, and then finalize. A Trip that closes with a known coverage gap must show the gap rather than a smoothed line across it.
+Derived summary. Each Trip carries a computed summary: duration, distance travelled, maximum and average speed, start and end odometer and engine hours, and the count of limit violations (§19A.1). Every value is derived from raw frames, retains the provenance §19 requires (source, device, method, version), and is subject to the same three-state honesty rule: a value the installed hardware cannot report is “not supported by this hardware,” never zero and never estimated. Where a required value has no automatic source, the manual fallback path from §11 applies and the value is marked as manually entered.
+Recall. A Trip must be retrievable, and searchable, from the booking, the booking item, the machine, the device, the customer’s history (§24), and by date range and location. Searchable means indexed and queryable through the API (§30A), not reconstructable in principle. An operator must be able to find every trip that had a violation, every trip a given customer took, and every trip a given machine performed, without exporting data.
+Retention. Raw telemetry frames and derived Trip summaries have separate retention policies. A Trip summary and its violation records are operational history and are retained with the booking. Raw frame retention is a storage decision and an open question (§35): raw position data at high frequency across a fleet grows quickly, and the retention window is also the window in which a dispute can be substantiated at full fidelity.
+Trip opening and closing is not a second source of truth. A Trip is opened and closed by the booking item lifecycle (§6), never by motion, ignition, or geofence state. The lifecycle remains the single authority on when a rental started and ended, consistent with §33.
+
+19A.1 Operating Limits and Violations
+An operator can define operating limits per rental product/category, per location. When a Trip’s telemetry crosses a limit, the system records a Violation bound to that Trip.
+
+V1 limit types, and only these:
+
+Geofence boundary, already required by §19: leaving the configured boundary for the category.
+Speed: exceeding a configured maximum speed.
+Tilt / orientation: exceeding a configured inclinometer angle.
+
+Do not build a general-purpose limit or rules engine. This mirrors §26: build the specific rules this document asks for, not a framework for hypothetical ones. Adding a fourth limit type is a founder decision, not a default.
+A violation is a threshold crossing, and must be named as one. It is a comparison against a raw signal the hardware actually reported, not the detection work deferred in §32. A record reads “exceeded configured tilt threshold of 35 degrees, peak 41 degrees, for 4 seconds.” It must never be labelled, in data or in the interface, as a rollover, a crash, a donut, reckless operation, or any other characterization of what happened. §19’s prohibition applies here in full. A staff member may always log an incident (§12) carrying their own interpretation; the system may not supply one.
+One violation per episode. Follow the geofence rule in §19: one record per crossing, carrying a start time, an end time, a duration, the configured threshold, and the peak observed value. Not one per raw frame. Use hysteresis so a signal oscillating at the threshold produces one violation, not forty.
+Thresholds are snapshotted. A violation stores the threshold that was actually in force when it occurred. An operator raising the speed limit next month must never change what a past trip is shown to have violated. Same principle as §29.
+Be honest about what was monitorable. A Trip must distinguish, per limit type: monitored and clean, monitored and violated, and not monitorable on this machine’s installed hardware. A machine whose device reports position but not speed has no speed verdict, and the interface must say so. Presenting a trip as clean on a limit that was never measurable is inventing a value, which §19 forbids, and it is worse than saying nothing because someone will rely on it in a dispute.
+Limit configuration is tenant configuration (§29), and changes to it are audited (§30).
+
+19A.2 Device Ingest
+Telemetry arrives through the API (§30A) like everything else. The ingest path must define:
+
+Device identity and credentials, distinct from staff and customer credentials, scoped to one device and its tenant. A device credential can write telemetry for its own machine and can do nothing else.
+Idempotency. A replayed or duplicated frame must never produce a second event or a second violation. Same discipline as payment events in §15.
+Clock handling. Devices record their own timestamps and device clocks drift. Carry both the device time and the server receipt time, and be explicit about which one ordering uses.
+Ordering. Frames can arrive out of order after a reconnect. Ingest must tolerate this without corrupting a derived summary.
+Sampling and rate limits, per device, so a malfunctioning unit cannot flood the pipeline or consume another tenant’s throughput.
+
+Simulated or placeholder telemetry remains subject to §19: visually and textually distinct everywhere, never presentable as a live reading, and never able to create a violation that looks real.
+
+19A.3 Interface Requirements
+The operator app (§18) must show:
+
+On a booking item: its Trip, with route, duration, distance, and any violations, plus the explicit not-monitorable state for any limit the installed hardware could not measure.
+On the Today board and the bookings list: a visible indicator on any booking item whose Trip has an open or recorded violation, so staff see it without opening the record.
+On a machine (§18, Fleet): its trip history.
+On customer history (§24): the customer’s trips and their violations, alongside the existing incidents and flags.
+A search across trips, filtered by violation type, date range, location, category, machine, and customer.
+
+A violation indicator must never be styled or worded as an accusation. It reports that a configured threshold was crossed, and it links to the underlying data.
+
+
+20. Machine Information Model
+The Machine model must support common powersports/rental fleet information, including where applicable: internal fleet/unit number, VIN/HIN, year, make, model, license plate/registration, product/category, location, operational state, mileage, engine hours, installed Talus hardware/device, and the relevant hardware capabilities of that device.
+
+Not every field applies to every machine type — do not require irrelevant fields.
+The model must accommodate equipment such as ATVs, UTVs, snowmobiles, motorcycles, jet skis, boats, and similar recreational rental equipment.
+If a machine is later reclassified into a different category, historical bookings must retain the category/product that was actually booked at the time — reclassification must never rewrite history.
+
+
+21. Locations, Multi-Location Operations & Transfers
+Every physical machine belongs operationally to a specific tenant location. Availability (§4) must be calculated at the relevant location, not across a tenant's entire fleet.
+A booking has a defined pickup location. Machine assignment (§3) must select an eligible machine at that location, unless an authorized operational transfer has occurred.
+Support machine transfers between locations, with an auditable history (§30).
+If a machine later moves to a different location, historical bookings must preserve the location that was actually relevant to that booking at the time.
+One-way rentals are not part of V1. Assume every rental begins and ends at the same location. Explicitly defer picking up at one location and returning at another — architect the model so this can be added later without requiring it now (§32).
+
+
+22. Accessories / Equipment Tracking
+Talus hardware does not track accessories such as helmets, life jackets, goggles, trailers, or keys — but the software must support lightweight operational tracking of what equipment was issued or returned, recorded as part of inspections/checkout/return (§11).
+
+Support quantity-based tracking where appropriate — do not assume every accessory is serialized.
+Do not build a full serialized accessory-inventory or ERP-level system for V1.
+Keep this extensible enough that serialized accessory tracking could be added later if confirmed necessary — but don't build it now.
+
+
+23. Late Returns & Overdue Detection
+The system must detect and visibly mark a rental as overdue once its scheduled return time has passed and the relevant booking item has not been returned. This must surface clearly on the Today board (§18).
+Automatic late-fee calculation is out of scope for V1 — this should be architected for later but remains explicitly deferred (§32).
+Staff may still extend an overdue rental through the authorized rental-extension workflow (§8) once contact is made with the customer.
+
+
+24. Customer History
+Customer history is part of V1, viewable per tenant (a customer's history is scoped to that tenant, consistent with multi-tenancy — §28).
+
+Support: previous rentals, relevant incidents/damage records (§12), waiver history/status, internal staff notes, a simple warning flag, and a simple do-not-rent flag.
+
+This is operational customer history, not a CRM. Do not add lead scoring, sales pipelines, marketing automation, customer-value scoring, or generalized CRM functionality. Changes to a customer's warning or do-not-rent flag must be recorded through the unified audit architecture (§30).
+
+Customer history also includes the customer’s trips and any operating limit violations recorded against them (§19A).
+
+
+25. Maintenance
+Support maintenance rules based on mileage, engine hours, and date/time.
+Build graduated status, not a single boolean: upcoming, due soon, due, overdue, completed.
+Build a dedicated maintenance-completion log, separate from an inspection record (§11): vehicle, maintenance type, date, mileage, engine hours, staff member, notes.
+Support blocking a machine's calendar for maintenance, using the same no-conflict guarantee (§4) that prevents double-booking a rental.
+Where a data source isn't automatically available (e.g., mileage not yet derived from hardware), support manual entry as an interim path, consistent with the inspection workflow's own honesty principle (§11).
+
+
+26. Booking Rules
+Support a minimum advance-booking window (e.g., no online reservations within 48 hours of the rental start), with staff able to manually override it.
+Keep this system deliberately narrow: a small number of specific, known rules — not a general-purpose rules engine. Don't build more rule types than are actually needed yet.
+
+
+27. Affiliates
+Build unique referral links or codes — distinct from promo codes (§14).
+Attribute a booking to the affiliate whose code or link was used.
+Build a commission lifecycle: pending when a booking is created, earned once the rental actually completes (not merely booked — a cancellation or no-show must never generate a payable commission), paid once the operator has actually paid it. The exact point that counts as "actually completes" is an open decision — see §35.
+Leave these out of this build: a full affiliate-facing portal or login, automated affiliate payouts, and W-9/tax-form collection — the latter is a legal and financial decision, not a UI feature, and shouldn't be built until that decision is made.
+
+
+28. Multi-Tenancy
+One system serves every operator (tenant). Isolation must be enforced at the data layer itself — not by convention, and not by trusting application code to filter correctly. Onboarding a new tenant should be a data operation, not an engineering task. Every feature in this document must be designed with tenant isolation as a first-class constraint from the start, not retrofitted later.
+
+
+29. Tenant Configuration
+Tenant configuration is an explicit architectural concept, not an afterthought bolted onto individual features. Organize settings logically — this does not need to mean one giant settings table.
+
+Configurable behavior includes at least: timezone, booking window, minimum advance-booking time (§26), machine-assignment lead time (§3), waiver signing mode (§10), which inspections are required (§11), cancellation policy, deposit/payment policy (§15), multi-day discount, tax/fee settings (§13), promo codes (§14), SMS configuration (§17), and whether a damage waiver is offered (§10).
+
+Add to that list: operating limits per category and per location (§19A.1), and the retention window for raw telemetry frames (§19A).
+
+A tenant changing a policy later must never change a historical booking — this is the same principle as the immutable price snapshot (§13), applied generally: history reflects what was true when it happened, not what's configured now.
+
+
+30. Unified Audit Events
+Build a first-class, immutable Audit Event architecture, used consistently across every module — not a separate, incompatible audit mechanism per feature.
+
+At minimum, audit: category overbooking (§4), machine assignment overrides (§3), booking modifications (§7), rental extensions (§8), price overrides, refunds, deposit actions, fleet-state changes, machine transfers (§21), customer warning/do-not-rent changes (§24), and configuration changes that affect operational or financial behavior (§29).
+
+Add to that list: changes to operating limit configuration (§19A.1).
+
+Every audit record must identify: the actor, the tenant, the action taken, the entity affected, the timestamp, and relevant surrounding context.
+
+
+30A. API and Interface Contract
+Every interface reaches data through one authoritative, versioned API. No interface queries or writes the database directly. This applies to the embeddable widget (§16), the standalone booking site, the operator app (§18), device ingest (§19A.2), and any interface added later.
+
+The API does not weaken data-layer isolation, it sits in front of it. §28 requires isolation enforced by the data layer, and §31 requires reads constrained by the same policy a real user is subject to. An API holding a privileged database role and filtering by tenant in application code would convert both guarantees back into convention, which is precisely what §28 forbids. Therefore: every request carries the authenticated caller’s identity into the database session, and the data layer’s isolation policy still evaluates on every query the API makes on that caller’s behalf. The API is the only door; the data layer remains the lock. Any privileged path that bypasses isolation must be explicitly enumerated, justified, audited (§30), and unreachable from any request originating outside the system.
+One implementation of every rule. Availability, pricing, machine assignment, occupancy, lifecycle transitions, and booking rules exist once, behind the API. §16’s requirement that the widget and the booking site can never quote different numbers is then satisfied structurally rather than by discipline, and it extends automatically to every interface added later.
+Caller classes. Define distinct authentication and authorization for a customer session, a staff session carrying its role from §18, a device credential (§19A.2), and any future integration credential. Role gating for sensitive actions (§18) is enforced at the API and at the data layer, never in the interface alone. An interface hiding a button is presentation, not protection.
+Writes. Consistent with §31, no caller writes a row directly. Every mutating operation is an explicit, named, auditable operation with validated inputs, and every material one emits an audit event through the unified architecture (§30). Mutating operations are idempotent wherever a retry is possible, so a repeated request cannot double-apply a booking modification, an extension, a money movement, or a telemetry frame.
+Contract discipline. Define once and apply everywhere: the error shape, including how a rule violation such as an overbooking warning or an illegal lifecycle transition is distinguished from a system failure; pagination for every list; filtering and sorting conventions; and versioning, so an operator’s embedded widget does not break when the API moves forward.
+Tenant resolution is explicit. The tenant is derived from the authenticated caller or from the explicitly configured embed context, never from a header or parameter a client can set freely, and never inferred from a hostname alone.
+Scope discipline. Build the API surface this document’s features actually require. Do not build a public partner API, a webhook publishing system, or an integration marketplace. §33 applies: the contract exists so that future interfaces have one correct way in, not so that every hypothetical consumer is anticipated now.
+
+
+31. Security, Data Integrity & Testing Standard
+No public-facing database role should ever hold write privileges. Every write must go through an explicit, auditable function — there should be no path for a client to write a row directly.
+Reads must be constrained by the same isolation policy a real customer or staff member is actually subject to, even from privileged application surfaces, so isolation is exercised on every real page load, not just in theory.
+Build a comprehensive automated test suite, including tests that force concurrent operations into real race conditions — not just happy-path coverage — and tests that directly verify tenant-isolation and privilege boundaries.
+Hold every capability in this document to this same standard: tenant-isolated by construction, backed by real concurrency and security tests.
+
+
+32. Explicitly Deferred — Architect Now, Build Later
+Feature
+Why it's not this build
+One-way rentals (pickup and return at different locations)
+Architect the location model so it can be added later (§21); not required now
+Automatic late-fee calculation
+Overdue detection ships now (§23); the fee calculation itself waits
+Full serialized accessory/equipment inventory
+Lightweight quantity-based tracking ships now (§22); a full ERP-style system does not
+Generalized participant/driver management
+Waivers capture participant info now (§9, §10); a dedicated subsystem does not
+Remote vehicle commands, including limp mode
+Passive geofence alerting is in scope; commanding a vehicle needs its own safety-critical design pass first
+Donut detection, crash detection, rollover detection
+Raw signal capture and manual incident logging are in scope; the automated detection algorithm itself waits until it's reliable
+Check-engine / diagnostic trouble codes
+A distinct capability from raw sensor signals; not part of this build's hardware signal set
+Automated damage charging
+Incidents can carry an estimated amount now (§12); converting that into an automatic charge does not ship yet
+Advanced payment policies beyond basic deposit handling
+The ledger model supports this later; the policy/flow layer isn't built yet
+Affiliate portal, automated payouts, W-9/tax onboarding
+Basic tracking is in scope (§27); these are not
+SEO/GEO features
+Not prioritized for this build
+
+
+33. Patterns to Avoid
+Don't build
+Why
+Two systems (e.g., booking and fleet) kept in sync over webhooks
+Two systems asserting the same fact will eventually disagree — one source of truth avoids ongoing reconciliation work
+A drag-and-drop calendar that can move a booking without going through booking rules
+A drag that bypasses the rules shows a system that doesn't actually exist
+Dynamic or surge pricing
+Only a base rate plus a configurable multi-day discount for this build
+A CRM panel, lead scoring, or marketing automation
+Customer history (§24) is operational, not a CRM
+A generalized, configurable rules engine
+Build the specific rules this document actually asks for (§26), not a framework for hypothetical future ones
+Hardcoded add-ons in application code
+Add-ons must be tenant-owned, configurable data
+Waiver text as a code constant
+Waiver text must be versioned, immutable data (§10)
+A simulated data feed detached from real positions
+Simulated data must be clearly labeled and never presented as real (§19)
+A separate admin console outside the main operator app
+One operator app, with real authentication and roles (§18)
+Separate, incompatible audit mechanisms per module
+Use the one unified audit architecture everywhere (§30)
+Adding a feature because it seems standard or expected, without a specific requirement for it in this document
+This document defines the scope of V1 deliberately — extend it through a founder decision, not by default
+An interface that queries or writes the database directly, bypassing the API
+One rule implementation, one door, and one place isolation is enforced (§30A)
+An API service that holds a privileged database role and filters tenants in application code
+This converts a structural guarantee into a convention; it is how multi-tenant data leaks happen (§28, §30A)
+
+
+34. Definition of Done
+A real powersports rental operator should be able to:
+
+Configure its tenant: locations, products/categories, machines, pricing, add-ons, booking rules, and policies (§3, §13, §14, §20, §21, §26, §29).
+Put the booking experience on its own website through the embeddable widget, or use the standalone booking site (§16).
+Accept a customer's booking for a category/product at a chosen pickup location (§3, §21), collecting the customer's basic contact information (§9).
+Calculate accurate availability, pricing, discounts, taxes, fees, and the total amount due, with the agreed terms preserved as an immutable price snapshot (§4, §13, §14).
+Handle payment once a processor is selected, on top of the processor-agnostic ledger already in place (§15).
+Send booking and waiver communications by email and SMS (§10, §17).
+Collect the required waiver signature(s), in whichever signing mode the tenant has configured (§10).
+Automatically assign an eligible physical machine shortly before pickup, with staff able to review or override the assignment, and any unresolved assignment conflict clearly surfaced (§3, §18).
+Perform the pre-rental inspection the tenant has configured, with known values auto-populated and everything else clearly marked as manual or unavailable (§11).
+Check the machine out — the booking item moves to checked_out, marking the start of the rental (§6).
+See every booking item's current state — including a mix of returned and still-checked-out items within one multi-machine booking — on the Today board and other operational views (§6, §18).
+Use available GPS/CAN/inclinometer telemetry honestly, wherever it's supported by the installed hardware (§19).
+Continue communicating with the customer through the supported channels throughout the rental (§17).
+Extend an active rental when allowed, with the system checking capacity, occupancy, and pricing implications and never creating a machine conflict (§8).
+See a rental flagged as overdue once its scheduled return time passes without a return (§23).
+Receive the machine back — the booking item moves to returned — and perform the configured post-rental inspection (§6, §11).
+Document an incident or damage record when necessary, independent of whether telemetry detected anything (§12).
+Close each booking item independently, and close the overall booking once every item on it is closed (§6).
+Modify an existing booking through the same authoritative rules as a new one, with every modification audited (§7).
+Preserve accurate customer history, payment history, audit history, waiver history, inspection history, and machine history throughout (§24, §30).
+Recall a completed rental’s trip, including route, distance, duration, and any operating limit violations, from the booking, from the machine, and from the customer’s history, with anything the installed hardware could not measure clearly marked as unmonitorable rather than clean (§19A).
+
+Do not interpret "a working V1" as license to add features beyond what this document specifies.
+
+
+35. Questions for the Founders
+These are genuine business decisions this document cannot resolve on its own. Nothing above is blocked on these being answered immediately, but V1 shouldn't be considered fully scoped until they are.
+
+Payment processor and payment-timing policy (§15). Which processor, and once chosen: pay-in-full only, a deposit-now/pay-later split, or another arrangement? The ledger is built to support any of these — this is a business choice, not an engineering one.
+Platform fee model (§15). A flat fee, a percentage, or none — this determines how Talus itself earns revenue from each tenant's bookings.
+Cancellation refund tiers (§13, §15). What refund percentage applies at what point before a rental start? This is customer-facing policy, not a technical detail.
+Affiliate commission trigger point (§27). Does a commission become earned at checkout, at return, or at booking close? This affects exactly when an operator can be shown a payable commission.
+Raw telemetry retention window (§19A). How long are raw position and signal frames kept at full fidelity? This is the window in which a dispute can be substantiated in detail, and it is also the dominant storage cost of the fleet pipeline.
+Default operating limits (§19A.1). Are speed and tilt limits set per operator with no platform default, or does Talus ship a suggested default that an operator can adjust?

@@ -1,0 +1,11 @@
+GRANT SELECT, REFERENCES ON TABLE app.pricing_revision TO talus_fn;
+GRANT SELECT, REFERENCES ON TABLE app.price_line TO talus_fn;
+DROP POLICY IF EXISTS pricing_revision_fn_select ON app.pricing_revision;
+CREATE POLICY pricing_revision_fn_select ON app.pricing_revision FOR SELECT TO talus_fn USING (true);
+DROP POLICY IF EXISTS price_line_fn_select ON app.price_line;
+CREATE POLICY price_line_fn_select ON app.price_line FOR SELECT TO talus_fn USING (true);
+ALTER TABLE app.price_line DROP CONSTRAINT IF EXISTS price_line_tenant_id_pricing_revision_id_fkey;
+ALTER TABLE app.price_line ADD CONSTRAINT price_line_pricing_revision_fkey FOREIGN KEY (tenant_id,pricing_revision_id) REFERENCES app.pricing_revision(tenant_id,pricing_revision_id);
+ALTER TABLE app.pricing_revision OWNER TO talus_fn;
+ALTER TABLE app.price_line OWNER TO talus_fn;
+REVOKE UPDATE, DELETE ON TABLE app.pricing_revision, app.price_line FROM PUBLIC, talus_fn, talus_api, talus_customer, talus_staff, talus_device;

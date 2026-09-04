@@ -1,0 +1,23 @@
+{
+  "name": "talus",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server/server.js",
+    "seed": "node scripts/seed-demo-data.js",
+    "smoke-test": "node scripts/smoke-test.js",
+    "db:migrate:test": "node scripts/migrate-test-db.js",
+    "test": "vitest run",
+    "test:m01": "vitest run test/m01.foundation.integration.test.js"
+  },
+  "devDependencies": {
+    "pg": "^8.16.3",
+    "vitest": "^4.0.8"
+  },
+  "dependencies": {
+    "@fastify/sensible": "^6.0.5",
+    "@fastify/swagger": "^9.8.1",
+    "@fastify/swagger-ui": "^6.1.1",
+    "fastify": "^5.12.1"
+  }
+}

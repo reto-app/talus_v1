@@ -1,0 +1,1 @@
+export async function authorizeDepositHoldWorkflow(client,{bookingItemId,amountCents,paymentReference}) { const row=(await client.query("SELECT app.authorize_booking_deposit_hold($1,$2,$3) AS transaction_id",[bookingItemId,amountCents,paymentReference])).rows[0];return{bookingItemId,holdStatus:"authorized",amountCents,transactionId:row.transaction_id}; }

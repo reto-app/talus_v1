@@ -1,0 +1,13 @@
+SET ROLE talus_fn;
+CREATE OR REPLACE FUNCTION app.talus_setting_text(p_name text) RETURNS text LANGUAGE sql STABLE AS $$ SELECT CASE WHEN p_name='talus.tenant_id' THEN current_setting('app.tenant_id',true) ELSE NULL END $$;
+CREATE OR REPLACE FUNCTION app.talus_setting_uuid(p_name text) RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT NULLIF(app.talus_setting_text(p_name),'')::uuid $$;
+DROP POLICY IF EXISTS pricing_revision_tenant_insert ON app.pricing_revision;
+DROP POLICY IF EXISTS pricing_revision_tenant_select ON app.pricing_revision;
+DROP POLICY IF EXISTS price_line_tenant_insert ON app.price_line;
+DROP POLICY IF EXISTS price_line_tenant_select ON app.price_line;
+CREATE POLICY pricing_revision_tenant_insert ON app.pricing_revision FOR INSERT WITH CHECK (tenant_id=app.talus_setting_uuid('talus.tenant_id') AND app.context_is_valid());
+CREATE POLICY pricing_revision_tenant_select ON app.pricing_revision FOR SELECT USING (tenant_id=app.talus_setting_uuid('talus.tenant_id') AND app.context_is_valid());
+CREATE POLICY price_line_tenant_insert ON app.price_line FOR INSERT WITH CHECK (tenant_id=app.talus_setting_uuid('talus.tenant_id') AND app.context_is_valid());
+CREATE POLICY price_line_tenant_select ON app.price_line FOR SELECT USING (tenant_id=app.talus_setting_uuid('talus.tenant_id') AND app.context_is_valid());
+CREATE OR REPLACE FUNCTION app.create_price_snapshot(p_id uuid,p_booking uuid,p_rate uuid,pickup timestamptz,dropoff timestamptz,tz text) RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path=app,public AS $$ DECLARE t uuid:=app.current_context_tenant_id();q jsonb;BEGIN RAISE NOTICE 'snapshot start: session %, current %, tenant %',session_user,current_user,app.talus_setting_text('talus.tenant_id');PERFORM app.require_staff_role('staff');RAISE NOTICE 'snapshot quote';q:=app.calculate_quote(p_rate,pickup,dropoff,tz);RAISE NOTICE 'snapshot insert revision';INSERT INTO app.pricing_revision VALUES(t,p_id,p_booking,1,'confirmed',NULL,clock_timestamp());RAISE NOTICE 'snapshot insert lines';INSERT INTO app.price_line VALUES(t,p_id,1,'rental_subtotal',(q->>'rental_subtotal_cents')::bigint,NULL),(t,p_id,2,'total',(q->>'total_cents')::bigint,NULL);RAISE NOTICE 'snapshot audit';PERFORM app.append_audit('pricing.snapshot_created','pricing_revision',p_id);RETURN p_id;EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'Snapshot failure: %, SQLSTATE: %',SQLERRM,SQLSTATE;RAISE;END; $$;
+RESET ROLE;

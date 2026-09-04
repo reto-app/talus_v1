@@ -1,0 +1,4 @@
+import{withTenantTransaction}from"../../db/transaction.js";import{assignMachineWorkflow,dispatchBookingItemWorkflow,returnBookingItemWorkflow,DomainError}from"../../services/operations-service.js";
+import{settleTripChargesWorkflow}from"../../services/settlement-service.js";
+export async function operationsRoutes(app,{pool}){const h=f=>(async(r,reply)=>{if(!["staff","api"].includes(r.talusContext.actorKind))return reply.forbidden();try{return await withTenantTransaction(pool,r.talusContext,c=>f(c,r.body))}catch(e){if(e instanceof DomainError)return reply.code(e.status).send({code:e.code});throw e}});app.post("/api/v1/operations/assign",h(assignMachineWorkflow));app.post("/api/v1/operations/dispatch",h(dispatchBookingItemWorkflow));app.post("/api/v1/operations/return",h(returnBookingItemWorkflow));app.post("/api/v1/operations/settle",h(settleTripChargesWorkflow))}
+ 

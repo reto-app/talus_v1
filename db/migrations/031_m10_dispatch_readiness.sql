@@ -1,0 +1,3 @@
+SET ROLE talus_fn;
+CREATE OR REPLACE FUNCTION app.check_booking_dispatch_readiness(p_item uuid,p_policy uuid) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path=app,pg_catalog AS $$ DECLARE t uuid:=app.current_context_tenant_id();BEGIN PERFORM app.require_context();RETURN EXISTS(SELECT 1 FROM app.booking_driver d WHERE d.tenant_id=t AND d.booking_item_id=p_item) AND NOT EXISTS(SELECT 1 FROM app.booking_driver d WHERE d.tenant_id=t AND d.booking_item_id=p_item AND NOT EXISTS(SELECT 1 FROM app.executed_waiver w WHERE w.tenant_id=t AND w.customer_id=d.customer_id AND w.booking_item_id=p_item AND w.waiver_policy_version_id=p_policy));END;$$;
+RESET ROLE;

@@ -1,0 +1,16 @@
+GRANT USAGE ON SCHEMA app TO talus_fn;
+GRANT SELECT, INSERT ON TABLE app.pricing_revision TO talus_fn;
+GRANT SELECT, INSERT ON TABLE app.price_line TO talus_fn;
+GRANT SELECT, INSERT, UPDATE ON TABLE app.promo_code TO talus_fn;
+GRANT SELECT, INSERT ON TABLE app.promo_redemption TO talus_fn;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA app TO talus_fn;
+GRANT SELECT, REFERENCES ON TABLE app.tenant TO talus_fn;
+GRANT SELECT, REFERENCES ON TABLE app.booking TO talus_fn;
+GRANT SELECT, REFERENCES ON TABLE app.tenant_pricing_policy TO talus_fn;
+ALTER TABLE app.pricing_revision OWNER TO talus_fn;
+ALTER TABLE app.price_line OWNER TO talus_fn;
+ALTER FUNCTION app.create_price_snapshot(uuid,uuid,uuid,timestamptz,timestamptz,text) OWNER TO talus_fn;
+ALTER FUNCTION app.create_price_snapshot(uuid,uuid,uuid,timestamptz,timestamptz,text) SET search_path = app, public;
+DROP POLICY IF EXISTS pricing_revision_tenant_insert ON app.pricing_revision;
+CREATE POLICY pricing_revision_tenant_insert ON app.pricing_revision FOR INSERT TO talus_fn WITH CHECK (tenant_id = app.current_context_tenant_id() AND app.context_is_valid());
+REVOKE UPDATE, DELETE ON TABLE app.pricing_revision, app.price_line FROM PUBLIC, talus_fn, talus_api, talus_customer, talus_staff, talus_device;
