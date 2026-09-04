@@ -1,0 +1,13 @@
+DO $$ BEGIN CREATE ROLE talus_public_fn NOLOGIN NOINHERIT; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+GRANT USAGE ON SCHEMA app TO talus_public_fn;
+REVOKE ALL ON ALL TABLES IN SCHEMA app FROM talus_public_fn;
+GRANT SELECT ON app.rental_product,app.product_rate,app.category_location,app.customer,app.tenant_waiver_policy TO talus_public_fn;
+GRANT SELECT,INSERT ON app.booking,app.booking_terms_revision,app.booking_item,app.booking_item_terms_revision,app.booking_customer,app.booking_driver,app.customer_booking_access_token,app.executed_waiver TO talus_public_fn;
+GRANT UPDATE(used_at) ON app.customer_booking_access_token TO talus_public_fn;
+DO $$ DECLARE n text; BEGIN FOREACH n IN ARRAY ARRAY['booking','booking_terms_revision','booking_item','booking_item_terms_revision','booking_customer','booking_driver','customer_booking_access_token','executed_waiver'] LOOP EXECUTE format('CREATE POLICY public_fn_insert ON app.%I FOR INSERT TO talus_public_fn WITH CHECK (tenant_id=NULLIF(current_setting(''app.public_tenant_id'',true),'''')::uuid)',n); EXECUTE format('CREATE POLICY public_fn_select ON app.%I FOR SELECT TO talus_public_fn USING (tenant_id=NULLIF(current_setting(''app.public_tenant_id'',true),'''')::uuid)',n); END LOOP; END $$;
+CREATE POLICY public_fn_catalog ON app.rental_product FOR SELECT TO talus_public_fn USING(active AND tenant_id=NULLIF(current_setting('app.public_tenant_id',true),'')::uuid);
+ALTER FUNCTION app.create_public_reservation(uuid,uuid,timestamptz,timestamptz) OWNER TO talus_public_fn;
+ALTER FUNCTION app.public_waiver_context(uuid) OWNER TO talus_public_fn;
+ALTER FUNCTION app.submit_public_waiver(uuid,text,text,inet) OWNER TO talus_public_fn;
+REVOKE ALL ON FUNCTION app.create_public_reservation(uuid,uuid,timestamptz,timestamptz),app.public_waiver_context(uuid),app.submit_public_waiver(uuid,text,text,inet) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.create_public_reservation(uuid,uuid,timestamptz,timestamptz),app.public_waiver_context(uuid),app.submit_public_waiver(uuid,text,text,inet) TO talus_api;

@@ -2,7 +2,7 @@ export async function tenantContextPlugin(fastify) {
   fastify.decorateRequest("talusContext", null);
   fastify.addHook("onRequest", async (request, reply) => {
     // Health probes intentionally remain outside the authenticated tenant API.
-    if (request.url.startsWith("/health/") || request.url.startsWith("/docs") || request.url.startsWith("/ops")) return;
+    if (request.url.startsWith("/health/") || request.url.startsWith("/docs") || request.url.startsWith("/ops") || request.url.startsWith("/book") || request.url.startsWith("/waiver/") || request.url.includes("/waiver-context")) return;
     const tenantId = request.headers["x-tenant-id"];
     const actorKind = request.headers["x-actor-kind"];
     const actorId = request.headers["x-actor-id"];

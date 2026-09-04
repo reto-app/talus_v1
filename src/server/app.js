@@ -11,6 +11,7 @@ import { healthRoutes } from "./routes/health-routes.js";
 import { opsRoutes } from "./routes/ops-routes.js";
 import { inspectionRoutes } from "./routes/inspection-routes.js";
 import { depositRoutes } from "./routes/deposit-routes.js";
+import { customerRoutes } from "./routes/customer-routes.js";
 export async function buildApp(pool,fastifyFactory=Fastify) {
   const app = fastifyFactory();
   app.decorate("talusReadiness", { isShuttingDown: false });
@@ -39,5 +40,6 @@ export async function buildApp(pool,fastifyFactory=Fastify) {
   await app.register(telemetryRoutes,{pool});
   await app.register(inspectionRoutes,{pool});
   await app.register(depositRoutes,{pool});
+  await app.register(customerRoutes,{pool});
   return app;
 }
