@@ -1,0 +1,1 @@
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app TO talus_public_fn;

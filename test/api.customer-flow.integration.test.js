@@ -1,0 +1,8 @@
+import { Pool } from "pg";
+import { afterAll, beforeAll, expect, it } from "vitest";
+import { buildApp } from "../src/server/app.js";
+import { seedDemoData, DEMO_IDS } from "../scripts/seed-demo-data.js";
+const u=process.env.TEST_DATABASE_URL??"postgres://mbinghamfamily@localhost:5432/talus_test";let p,app;
+beforeAll(async()=>{await seedDemoData();p=new Pool({connectionString:u});app=await buildApp(p)});afterAll(async()=>{await app.close();await p.end()});
+it("serves public booking and waiver views",async()=>{expect((await app.inject({method:"GET",url:"/book"})).statusCode).toBe(200);expect((await app.inject({method:"GET",url:"/waiver/x"})).statusCode).toBe(200)});
+it("creates a scoped public reservation and completes its waiver",async()=>{const catalog=(await app.inject({method:"GET",url:"/book/api/catalog"})).json();expect(catalog.products.length).toBeGreaterThan(0);const r=await app.inject({method:"POST",url:"/book/api/reservations",payload:{customerId:DEMO_IDS.customer,categoryLocationId:catalog.products[0].category_location_id,rentalPeriod:{start:"2040-01-01T10:00:00Z",end:"2040-01-02T10:00:00Z"}}});if(r.statusCode!==201)console.error("POST /book/api/reservations failure:",r.statusCode,r.payload);expect(r.statusCode).toBe(201);const x=r.json();expect(x.access_token).toBeTruthy();const c=await app.inject({method:"GET",url:`/api/v1/bookings/${x.booking_item_id}/waiver-context?token=${x.access_token}`});expect(c.statusCode).toBe(200);const w=await app.inject({method:"POST",url:`/waiver/${x.booking_item_id}/api/submit`,payload:{token:x.access_token,signerName:"Jane Doe",signatureRef:"signature"}});expect(w.statusCode).toBe(201)});
