@@ -69,6 +69,17 @@ export async function getDispatchBoardWorkflow(client, { date } = {}) {
             EXISTS (SELECT 1 FROM app.inspection i WHERE i.tenant_id=b.tenant_id
                      AND i.booking_item_id=bi.booking_item_id AND i.inspection_type='outbound'
                      AND i.status='completed') AS outbound_inspection_ready,
+            EXISTS (SELECT 1 FROM app.booking_driver d WHERE d.tenant_id=b.tenant_id AND d.booking_item_id=bi.booking_item_id)
+            AND NOT EXISTS (
+              SELECT 1 FROM app.booking_driver d
+               WHERE d.tenant_id=b.tenant_id AND d.booking_item_id=bi.booking_item_id
+                 AND NOT EXISTS (
+                   SELECT 1 FROM app.executed_waiver w
+                    WHERE w.tenant_id=d.tenant_id AND w.customer_id=d.customer_id
+                      AND w.booking_item_id=d.booking_item_id
+                      AND w.waiver_policy_version_id=(SELECT tenant_waiver_policy_id FROM app.tenant_waiver_policy p WHERE p.tenant_id=b.tenant_id ORDER BY p.version_number DESC LIMIT 1)
+                 )
+            ) AS waiver_ready,
             EXISTS (SELECT 1 FROM app.trip t WHERE t.tenant_id=b.tenant_id
                      AND t.booking_item_id=bi.booking_item_id AND t.ended_at IS NULL) AS active_trip
        FROM app.booking_item bi

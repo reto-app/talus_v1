@@ -9,7 +9,7 @@ beforeAll(async () => { await seedDemoData(); pool = new Pool({ connectionString
 afterAll(async () => { await app.close(); await pool.end(); });
 it("serves the operations console without tenant headers", async () => {
   const response = await app.inject({ method: "GET", url: "/ops" });
-  expect(response.statusCode).toBe(200); expect(response.headers["content-type"]).toContain("text/html"); expect(response.body).toContain("STAFF DISPATCH BOARD");
+  expect(response.statusCode).toBe(200); expect(response.headers["content-type"]).toContain("text/html"); expect(response.body).toContain("Yard Operations Console");
 });
 it("bootstraps a development demo session and fleet", async () => {
   const response = await app.inject({ method: "GET", url: "/ops/api/bootstrap" });
