@@ -12,6 +12,7 @@ import { opsRoutes } from "./routes/ops-routes.js";
 import { inspectionRoutes } from "./routes/inspection-routes.js";
 import { depositRoutes } from "./routes/deposit-routes.js";
 import { customerRoutes } from "./routes/customer-routes.js";
+import { fleetRoutes } from "./routes/fleet-routes.js";
 export async function buildApp(pool,fastifyFactory=Fastify) {
   const app = fastifyFactory();
   app.decorate("talusReadiness", { isShuttingDown: false });
@@ -31,6 +32,7 @@ export async function buildApp(pool,fastifyFactory=Fastify) {
   await tenantContextPlugin(app);
   await healthRoutes(app,{pool,readiness:app.talusReadiness});
   await app.register(opsRoutes,{pool});
+  await app.register(fleetRoutes,{pool});
   const tx=(r,fn)=>withTenantTransaction(pool,r.talusContext,fn);
   app.post("/api/v1/quotes",async(r)=>tx(r,c=>generateQuote(c,r.body)));
   app.post("/api/v1/bookings",async(r,reply)=>{if(r.talusContext.actorKind==="customer")return reply.forbidden();return reply.code(201).send(await tx(r,c=>createBookingWorkflow(c,r.body)))});

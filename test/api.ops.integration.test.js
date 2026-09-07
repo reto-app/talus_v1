@@ -7,9 +7,11 @@ const databaseUrl = process.env.TEST_DATABASE_URL ?? "postgres://mbinghamfamily@
 let pool, app;
 beforeAll(async () => { await seedDemoData(); pool = new Pool({ connectionString: databaseUrl }); app = await buildApp(pool); });
 afterAll(async () => { await app.close(); await pool.end(); });
-it("serves the operations console without tenant headers", async () => {
+it("serves the operations console with persistent staff navigation", async () => {
   const response = await app.inject({ method: "GET", url: "/ops" });
   expect(response.statusCode).toBe(200); expect(response.headers["content-type"]).toContain("text/html"); expect(response.body).toContain("Yard Operations Console");
+  expect(response.body).toContain("href=\"/fleet\"");
+  expect(response.body).toContain("/assets/talus-logo.png");
 });
 it("bootstraps a development demo session and fleet", async () => {
   const response = await app.inject({ method: "GET", url: "/ops/api/bootstrap" });

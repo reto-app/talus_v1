@@ -7,10 +7,24 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    :root{--talus-cream:#eee7d5;--talus-paper:#f8f3e8;--talus-ink:#07141c;--talus-line:#d3c9b5}
+    body>header,body>main{margin-left:224px}
+    .talus-sidebar{position:fixed;inset:0 auto 0 0;z-index:45;width:224px;background:var(--talus-cream);border-right:1px solid var(--talus-line);color:var(--talus-ink);padding:22px 15px;display:flex;flex-direction:column;gap:25px}
+    .talus-brand{display:flex;align-items:center;gap:11px;padding:0 7px}.talus-brand img{width:43px;height:43px;border-radius:9px}.talus-brand strong{display:block;font-size:19px;letter-spacing:.08em}.talus-brand small{display:block;margin-top:2px;color:#6d746f;font-size:9px;letter-spacing:.18em}
+    .talus-nav-label{padding:0 9px 7px;color:#8d877a;font-size:9px;font-weight:800;letter-spacing:.16em}.talus-nav{display:grid;gap:5px}.talus-nav a{display:flex;align-items:center;gap:10px;border-radius:9px;padding:11px 12px;color:#4f5a60;text-decoration:none;font-size:13px;font-weight:650}.talus-nav a:hover{background:#e4dbc8;color:var(--talus-ink)}.talus-nav a.active{background:var(--talus-ink);color:var(--talus-cream)}.talus-nav svg{width:16px;height:16px}.talus-sidebar-foot{margin-top:auto;border-top:1px solid var(--talus-line);padding:16px 8px 0;color:#69736f;font-size:10px;line-height:1.6}.talus-sidebar-foot b{color:#318768}
+    @media(max-width:850px){.talus-sidebar{width:76px;padding-inline:10px}.talus-brand{padding:0}.talus-brand-copy,.talus-nav-label,.talus-nav a span,.talus-sidebar-foot{display:none}.talus-nav a{justify-content:center;padding:12px}body>header,body>main{margin-left:76px}}
+  </style>
 </head><body class="min-h-screen bg-slate-950 font-sans text-slate-100 antialiased">
+<nav class="talus-sidebar" aria-label="Staff navigation">
+  <a class="talus-brand" href="/fleet"><img src="/assets/talus-logo.png" alt="Talus logo"><span class="talus-brand-copy"><strong>TALUS</strong><small>FLEET OS</small></span></a>
+  <div><div class="talus-nav-label">OPERATIONS</div><div class="talus-nav"><a href="/fleet"><i data-lucide="map"></i><span>Live Fleet</span></a><a class="active" href="/ops"><i data-lucide="clipboard-list"></i><span>Dispatch Board</span></a><a href="#"><i data-lucide="calendar-range"></i><span>Reservations</span></a></div></div>
+  <div><div class="talus-nav-label">MANAGEMENT</div><div class="talus-nav"><a href="#"><i data-lucide="wrench"></i><span>Fleet &amp; Service</span></a><a href="#"><i data-lucide="users"></i><span>Customers</span></a><a href="#"><i data-lucide="settings"></i><span>Rules &amp; Pricing</span></a></div></div>
+  <div class="talus-sidebar-foot"><b>● SYSTEM ONLINE</b><br>Tenant-scoped yard operations</div>
+</nav>
 <header class="sticky top-0 z-30 border-b border-slate-800/90 bg-slate-950/90 backdrop-blur">
   <div class="mx-auto flex max-w-[1600px] flex-wrap items-center gap-4 px-5 py-4 lg:px-8">
-    <div class="mr-auto flex items-center gap-3"><div class="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-emerald-400 to-cyan-500 text-slate-950 shadow-glow"><i data-lucide="mountain" class="h-5 w-5"></i></div><div><p class="text-xs font-semibold uppercase tracking-[.22em] text-emerald-400">Talus Fleet OS</p><h1 class="text-lg font-bold tracking-tight">Yard Operations Console</h1></div></div>
+    <div class="mr-auto flex items-center gap-3"><img src="/assets/talus-logo.png" alt="Talus logo" class="h-10 w-10 rounded-xl"><div><p class="text-xs font-semibold uppercase tracking-[.22em] text-amber-100">Talus Fleet OS</p><h1 class="text-lg font-bold tracking-tight">Yard Operations Console</h1></div></div>
     <div class="hidden items-center gap-2 text-sm text-slate-400 md:flex"><i data-lucide="map-pin" class="h-4 w-4 text-emerald-400"></i><span id="locationLabel">Active location</span><span class="text-slate-700">•</span><i data-lucide="clock-3" class="h-4 w-4"></i><time id="clock"></time></div>
     <label class="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300"><i data-lucide="calendar-days" class="h-4 w-4 text-emerald-400"></i><input id="date" type="date" class="w-28 bg-transparent text-slate-100 outline-none"></label><button id="refresh" class="rounded-lg border border-slate-700 bg-slate-900 p-2 text-slate-300 transition hover:border-emerald-500 hover:text-emerald-300" title="Refresh board"><i data-lucide="refresh-cw" class="h-4 w-4"></i></button>
   </div>
