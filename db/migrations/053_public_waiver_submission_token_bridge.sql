@@ -22,6 +22,7 @@ CREATE POLICY tenant_waiver_policy_public_select
   FOR SELECT TO talus_public_fn
   USING (tenant_id = NULLIF(current_setting('app.public_tenant_id', true), '')::uuid);
 
+GRANT CREATE ON SCHEMA app TO talus_public_fn;
 RESET ROLE;
 SET ROLE talus_public_fn;
 
@@ -92,4 +93,7 @@ BEGIN
 END;
 $$;
 
+RESET ROLE;
+SET ROLE talus_fn;
+REVOKE CREATE ON SCHEMA app FROM talus_public_fn;
 RESET ROLE;

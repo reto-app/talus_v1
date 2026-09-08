@@ -26,10 +26,6 @@
         </div>
         <div class="talus-topbar-spacer"></div>
         <time class="talus-clock" id="clock" aria-hidden="true">--:--</time>
-        <div class="talus-seg" role="group" aria-label="Map layer">
-          <button type="button" id="roadLayerBtn" aria-pressed="true">Road</button>
-          <button type="button" id="satelliteLayerBtn" aria-pressed="false">Satellite</button>
-        </div>
         <button type="button" class="talus-icon-btn" id="logoutButton" aria-label="Sign out"></button>
       </header>
 
@@ -41,10 +37,10 @@
         <section class="fleet-map-region is-active-tab" id="mapRegion" aria-label="Fleet map">
           <div class="fleet-map-toolbar">
             <div class="fleet-chip-group" role="group" aria-label="Show">
-              <button type="button" class="fleet-chip" data-scope="rented" aria-pressed="true">Rented</button>
+              <button type="button" class="fleet-chip" data-scope="all" aria-pressed="true">All</button>
+              <button type="button" class="fleet-chip" data-scope="rented" aria-pressed="false">Rented</button>
               <button type="button" class="fleet-chip" data-scope="yard" aria-pressed="false">Yard</button>
               <button type="button" class="fleet-chip" data-scope="service" aria-pressed="false">Service</button>
-              <button type="button" class="fleet-chip" data-scope="all" aria-pressed="false">All</button>
             </div>
             <label class="fleet-search">
               <span class="talus-visually-hidden">Search fleet</span>
@@ -55,6 +51,10 @@
           </div>
 
           <div id="map" class="fleet-map" role="application" aria-label="Fleet map. A searchable list view is available as an alternative."></div>
+          <div class="fleet-layer-control" role="group" aria-label="Map layer">
+            <button type="button" id="roadLayerBtn" aria-pressed="true">Road</button>
+            <button type="button" id="satelliteLayerBtn" aria-pressed="false">Satellite</button>
+          </div>
           <div id="mapStatus" class="fleet-map-status"><p>Loading live fleet telemetry…</p></div>
 
           <div class="fleet-map-legend" aria-hidden="true">

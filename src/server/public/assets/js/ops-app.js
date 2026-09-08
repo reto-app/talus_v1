@@ -421,7 +421,8 @@ function buildInspectionDrawer(attemptClose) {
 
     wrap.appendChild(h("div", { class: "talus-section-title" }, "READINGS"));
     wrap.appendChild(readingField("Fuel level (%)", "fuelPct", "fuelUnavailable", "fuelReason", refresh));
-    wrap.appendChild(readingField("Odometer (miles)", "odometerMiles", "odometerUnavailable", "odometerReason", refresh));
+    if (type === "inbound") wrap.appendChild(readingField("Odometer (miles)", "odometerMiles", "odometerUnavailable", "odometerReason", refresh));
+    if (type === "outbound") wrap.appendChild(h("p", { style: "font-size:12px;color:var(--talus-muted);margin:8px 0 0" }, "Odometer is captured automatically by Talus hardware when available. A missing reading does not block this inspection."));
 
     wrap.appendChild(h("label", { class: "talus-field" }, ["Notes", h("textarea", { class: "talus-textarea", value: currentDraft.notes, oninput: (e) => { currentDraft.notes = e.target.value; draftDirty = true; } })]));
     return wrap;
@@ -497,8 +498,8 @@ function openInspectionReview() {
   if (missing.length) { toast(`Set an outcome for: ${missing.map((m) => m.item.replaceAll("_", " ")).join(", ")}`, { kind: "error" }); return; }
   if (!currentDraft.fuelUnavailable && currentDraft.fuelPct === "") { toast("Enter a fuel reading or mark it unavailable.", { kind: "error" }); return; }
   if (currentDraft.fuelUnavailable && !currentDraft.fuelReason.trim()) { toast("Explain why the fuel reading is unavailable.", { kind: "error" }); return; }
-  if (!currentDraft.odometerUnavailable && currentDraft.odometerMiles === "") { toast("Enter an odometer reading or mark it unavailable.", { kind: "error" }); return; }
-  if (currentDraft.odometerUnavailable && !currentDraft.odometerReason.trim()) { toast("Explain why the odometer reading is unavailable.", { kind: "error" }); return; }
+  if (currentInspectionType === "inbound" && !currentDraft.odometerUnavailable && currentDraft.odometerMiles === "") { toast("Enter an odometer reading or mark it unavailable.", { kind: "error" }); return; }
+  if (currentInspectionType === "inbound" && currentDraft.odometerUnavailable && !currentDraft.odometerReason.trim()) { toast("Explain why the odometer reading is unavailable.", { kind: "error" }); return; }
 
   const unsafeItems = currentDraft.items.filter((i) => i.outcome === "unsafe");
   const panel = h("div", { class: "talus-modal-panel" });
@@ -509,7 +510,9 @@ function openInspectionReview() {
     h("p", { style: "font-size:12.5px;color:var(--talus-muted)" }, `${state.detail.fleet_number || "Unit"} · ${state.detail.booking_reference} · ${state.detail.customer_name || "Customer"}`),
     unsafeItems.length ? h("p", { style: "color:var(--talus-red);font-weight:700;font-size:13px;margin-top:10px" }, `${unsafeItems.map((i) => i.item.replaceAll("_", " ")).join(", ")} marked unsafe. This will block dispatch and open a maintenance hold.`) : null,
     h("ul", { style: "font-size:13px;padding-left:18px;margin:12px 0" }, currentDraft.items.map((i) => h("li", {}, `${i.item.replaceAll("_", " ")}: ${OUTCOME_LABEL[i.outcome]}`))),
-    h("p", { style: "font-size:13px" }, `Fuel: ${currentDraft.fuelUnavailable ? `Unavailable (${currentDraft.fuelReason})` : `${currentDraft.fuelPct}%`} · Odometer: ${currentDraft.odometerUnavailable ? `Unavailable (${currentDraft.odometerReason})` : `${currentDraft.odometerMiles} mi`}`),
+    h("p", { style: "font-size:13px" }, currentInspectionType === "inbound"
+      ? `Fuel: ${currentDraft.fuelUnavailable ? `Unavailable (${currentDraft.fuelReason})` : `${currentDraft.fuelPct}%`} · Odometer: ${currentDraft.odometerUnavailable ? `Unavailable (${currentDraft.odometerReason})` : `${currentDraft.odometerMiles} mi`}`
+      : `Fuel: ${currentDraft.fuelUnavailable ? `Unavailable (${currentDraft.fuelReason})` : `${currentDraft.fuelPct}%`}`),
     h("div", { style: "display:flex;gap:8px;justify-content:flex-end;margin-top:16px" }, [
       h("button", { type: "button", class: "talus-btn", onclick: () => dialog.close() }, "Back"),
       h("button", { type: "button", class: "talus-btn talus-btn-primary", onclick: (event) => submitInspection(event, dialog) }, "Complete inspection"),
@@ -528,9 +531,9 @@ async function submitInspection(event, dialog) {
         machineId: state.detail.machine_id || state.chosenMachineId,
         type: currentInspectionType,
         fuelLevelPct: currentDraft.fuelUnavailable ? null : Number(currentDraft.fuelPct),
-        odometerMiles: currentDraft.odometerUnavailable ? null : Number(currentDraft.odometerMiles),
+        odometerMiles: currentInspectionType === "inbound" && !currentDraft.odometerUnavailable ? Number(currentDraft.odometerMiles) : null,
         fuelUnavailableReason: currentDraft.fuelUnavailable ? currentDraft.fuelReason : null,
-        odometerUnavailableReason: currentDraft.odometerUnavailable ? currentDraft.odometerReason : null,
+        odometerUnavailableReason: currentInspectionType === "inbound" && currentDraft.odometerUnavailable ? currentDraft.odometerReason : null,
         notes: currentDraft.notes,
         checkItems: currentDraft.items.map((i) => ({ item: i.item, outcome: i.outcome, notes: i.notes, photoRefs: i.photoRefs })),
       },

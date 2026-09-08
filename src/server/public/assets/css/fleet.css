@@ -51,6 +51,16 @@
   color: #c5d4e1; padding: 9px 12px; font: 700 11px var(--talus-font-ui); cursor: pointer; min-height: 40px;
 }
 .fleet-map-controls button[aria-pressed="true"] { background: #176b6f; border-color: #48d69a; color: #fff; }
+.fleet-layer-control {
+  position: absolute; z-index: 500; top: 74px; right: 14px; display: flex;
+  background: #0b1826e8; border: 1px solid var(--talus-night-line); border-radius: var(--talus-radius-md); padding: 4px;
+}
+.fleet-layer-control button {
+  min-height: 32px; border: 0; border-radius: calc(var(--talus-radius-md) - 3px); background: transparent;
+  color: var(--talus-muted-on-dark); padding: 0 10px; font: 700 11px var(--talus-font-ui); cursor: pointer;
+}
+.fleet-layer-control button[aria-pressed="true"] { background: #1c3348; color: #fff; }
+.fleet-layer-control button:focus-visible { outline: 2px solid #7fd4ff; outline-offset: 2px; }
 
 .fleet-map-status {
   position: absolute; inset: 0; display: grid; place-items: center; z-index: 400;
@@ -120,4 +130,5 @@
   .fleet-incident-rail:not(.is-active-tab) { display: none; }
   .fleet-map-region:not(.is-active-tab) { display: none; }
   .fleet-list-panel:not(.is-active-tab) { display: none; }
+  .fleet-layer-control { top: 112px; }
 }

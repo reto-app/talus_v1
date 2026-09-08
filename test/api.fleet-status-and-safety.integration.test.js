@@ -221,6 +221,21 @@ it("requires either a reading or an explicit unavailable reason for fuel and odo
   expect(withReason.statusCode).toBe(201);
 });
 
+it("allows a pre-rental inspection without a manual odometer or unavailable reason", async () => {
+  const machineId = await makeMachine();
+  const booking = await app.inject({ method: "POST", url: "/api/v1/bookings", headers: headers(), payload: { categoryLocationId, customerId, rentalPeriod: { start: "2041-06-10T10:00:00Z", end: "2041-06-11T10:00:00Z" } } });
+  const bookingItemId = booking.json().booking_item_id;
+  await app.inject({ method: "POST", url: "/api/v1/operations/assign", headers: headers(), payload: { bookingItemId, machineId } });
+
+  const inspection = await app.inject({
+    method: "POST", url: "/api/v1/inspections", headers: headers(),
+    payload: { bookingItemId, machineId, type: "outbound", fuelLevelPct: 100, checkItems: PASSING_CHECKLIST },
+  });
+  expect(inspection.statusCode).toBe(201);
+  const row = (await pool.query("SELECT odometer_miles, odometer_reading_unavailable_reason FROM app.inspection WHERE inspection_id=$1", [inspection.json().inspectionId])).rows[0];
+  expect(row).toEqual({ odometer_miles: null, odometer_reading_unavailable_reason: null });
+});
+
 it("never lets one booking's settlement touch a different booking's deposit hold (hold is looked up server-side, never client-supplied)", async () => {
   // The dispatch gate requires a deposit hold before a machine can even be
   // dispatched, so "returned with no hold at all" cannot occur through the

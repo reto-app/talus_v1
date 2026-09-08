@@ -1,5 +1,7 @@
 -- The context function must use the validated token row in its result query,
 -- rather than any token visible for the now-scoped tenant.
+SET ROLE talus_fn;
+GRANT CREATE ON SCHEMA app TO talus_public_fn;
 SET ROLE talus_public_fn;
 
 CREATE OR REPLACE FUNCTION app.public_waiver_context(p_token uuid)
@@ -56,4 +58,7 @@ BEGIN
 END;
 $$;
 
+RESET ROLE;
+SET ROLE talus_fn;
+REVOKE CREATE ON SCHEMA app FROM talus_public_fn;
 RESET ROLE;

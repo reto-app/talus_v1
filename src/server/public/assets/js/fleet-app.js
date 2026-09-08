@@ -22,7 +22,7 @@ const state = {
   incidents: [],
   incidentFilter: "open",
   selectedMachineId: null,
-  scope: "rented",
+  scope: "all",
   searchQuery: "",
   summaryFilter: null,
   listViewActive: false,

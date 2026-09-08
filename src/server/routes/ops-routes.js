@@ -20,7 +20,9 @@ export async function opsRoutes(app, { pool }) {
   ));
 
   app.get("/ops/api/bootstrap", async (_request, reply) => {
-    if (process.env.NODE_ENV === "production" && process.env.OPS_DEMO_BOOTSTRAP !== "true") {
+    // Token issuance is demo-only. A production process must never become a
+    // demo merely because an old route happens to be reachable.
+    if (process.env.TALUS_DEMO_MODE !== "true" || process.env.NODE_ENV === "production") {
       return reply.code(404).send({ error: "not_found" });
     }
     const client = await pool.connect();
