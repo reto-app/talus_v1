@@ -9,16 +9,23 @@ const FILTER_DEFS = [
   { key: "on_rent", label: "On rent" },
   { key: "return_due", label: "Returns due" },
   { key: "overdue", label: "Overdue" },
-  { key: "settlement_pending", label: "Settlement" },
+  { key: "returned", label: "Returned" },
   { key: "closed", label: "Closed" },
+  { key: "cancelled", label: "Cancelled" },
+  { key: "no_show", label: "No-show" },
 ];
+// Booking-item lifecycle stage, distinct from the raw DB state: "returned"
+// covers everything from physical-return to close, since inspection and
+// settlement may each independently still be outstanding at that point.
 const STAGE_LABEL = {
   prepare: "Prepare",
   ready_to_dispatch: "Ready to dispatch",
   on_rent: "On rent",
   overdue: "Overdue",
-  settlement_pending: "Settlement pending",
+  returned: "Returned",
   closed: "Closed",
+  cancelled: "Cancelled",
+  no_show: "No-show",
 };
 
 const state = {
@@ -83,7 +90,6 @@ function renderQueue() {
     return;
   }
   for (const item of items) {
-    const blocker = mostUrgentBlocker(item);
     const card = h("button", {
       type: "button", class: "ops-job", "aria-current": String(item.booking_item_id === state.selectedBookingItemId),
       onclick: () => selectBooking(item.booking_item_id),
@@ -92,26 +98,53 @@ function renderQueue() {
         h("div", {}, [h("b", {}, item.customer_name || "Customer"), h("div", { class: "ops-job-sub" }, `${item.product_name || "Rental"} · ${item.booking_reference}`)]),
         h("span", { class: "ops-job-time" }, formatDateTime(item.dispatch_bucket === "pickup" ? item.scheduled_start_at : item.scheduled_end_at, { year: undefined })),
       ]),
-      h("div", { class: "ops-job-badges" }, [
-        bucketBadge(item.dispatch_bucket),
-        blocker ? h("span", { class: "talus-badge talus-badge-amber" }, blocker) : h("span", { class: "talus-badge talus-badge-green" }, "Ready"),
-      ]),
+      h("div", { class: "ops-job-badges" }, [bucketBadge(item.dispatch_bucket), secondaryBadge(item)].filter(Boolean)),
     ]);
     list.appendChild(card);
   }
 }
 function bucketBadge(bucket) {
-  const cls = bucket === "overdue" ? "red" : bucket === "return_due" || bucket === "settlement_pending" ? "amber" : bucket === "closed" ? "neutral" : "blue";
+  const cls = bucket === "overdue" ? "red" : bucket === "return_due" || bucket === "returned" ? "amber"
+    : bucket === "closed" || bucket === "cancelled" || bucket === "no_show" ? "neutral" : "blue";
   const label = FILTER_DEFS.find((f) => f.key === bucket)?.label || bucket;
   return h("span", { class: `talus-badge talus-badge-${cls}` }, label);
 }
-function mostUrgentBlocker(item) {
-  if (item.dispatch_bucket === "closed" || item.dispatch_bucket === "settlement_pending") return null;
-  if (item.dispatch_bucket === "on_rent" || item.dispatch_bucket === "overdue" || item.dispatch_bucket === "return_due") return item.active_trip ? null : null;
+// A second, context-appropriate badge -- never a blanket green "Ready" for
+// stages where "ready" isn't a meaningful concept (overdue, returned,
+// closed, cancelled, no-show all get their own honest text instead).
+function secondaryBadge(item) {
+  switch (item.dispatch_bucket) {
+    case "pickup": {
+      const blocker = pickupBlocker(item);
+      return blocker
+        ? h("span", { class: "talus-badge talus-badge-amber" }, blocker)
+        : h("span", { class: "talus-badge talus-badge-green" }, "Ready to dispatch");
+    }
+    case "on_rent":
+    case "return_due":
+      return h("span", { class: "talus-badge talus-badge-neutral" }, `Due ${formatDateTime(item.scheduled_end_at, { year: undefined })}`);
+    case "overdue":
+      return h("span", { class: "talus-badge talus-badge-red" }, `Overdue since ${formatDateTime(item.scheduled_end_at, { year: undefined })}`);
+    case "returned": {
+      const blocker = returnedBlocker(item);
+      return blocker
+        ? h("span", { class: "talus-badge talus-badge-amber" }, blocker)
+        : h("span", { class: "talus-badge talus-badge-green" }, "Ready to close");
+    }
+    default:
+      return null;
+  }
+}
+function pickupBlocker(item) {
   if (!item.machine_id) return "Needs assignment";
   if (!item.waiver_ready) return "Needs waiver";
-  if (!item.deposit_ready) return "Needs deposit";
-  if (!item.outbound_inspection_ready) return "Needs inspection";
+  if (item.deposit_required && !item.deposit_ready) return "Needs deposit";
+  if (item.outbound_inspection_required && !item.outbound_inspection_ready) return "Needs pre-rental inspection";
+  return null;
+}
+function returnedBlocker(item) {
+  if (item.inbound_inspection_required && !item.inbound_inspection_ready) return "Needs post-rental inspection";
+  if (!item.settlement_ready) return "Needs reconciliation";
   return null;
 }
 
@@ -154,11 +187,19 @@ async function loadReturnSummary() {
   catch { state.returnSummary = null; }
 }
 
+// Booking-item lifecycle stage. "returned" is deliberately one stage that
+// covers physical-return through close -- inspection and settlement are
+// independently-tracked outstanding requirements within it, not separate
+// stages, since either or both may be unnecessary depending on tenant
+// policy and staff should never be blocked from recording one because the
+// other has not happened yet.
 function computeStage() {
   const d = state.detail;
   if (!d) return null;
-  if (["closed", "cancelled", "no_show"].includes(d.booking_item_state)) return "closed";
-  if (d.booking_item_state === "returned") return state.returnSummary?.isSettled ? "closed" : "settlement_pending";
+  if (d.booking_item_state === "cancelled") return "cancelled";
+  if (d.booking_item_state === "no_show") return "no_show";
+  if (d.booking_item_state === "closed") return "closed";
+  if (d.booking_item_state === "returned") return "returned";
   if (d.active_trip) return new Date(d.scheduled_end_at) < new Date() ? "overdue" : "on_rent";
   return state.gate?.isReady ? "ready_to_dispatch" : "prepare";
 }
@@ -173,12 +214,16 @@ function renderCommandCenter() {
   const container = document.querySelector("#bookingDetail");
   clear(container);
 
+  const stageBadgeColor = {
+    prepare: "neutral", ready_to_dispatch: "green", on_rent: "blue", overdue: "red",
+    returned: "amber", closed: "neutral", cancelled: "neutral", no_show: "neutral",
+  }[stage] || "neutral";
   container.appendChild(h("div", { class: "ops-booking-header" }, [
     h("div", { style: "flex:1;min-width:200px" }, [
       h("h2", {}, `${d.booking_reference} · ${d.customer_name || "Customer"}`),
       h("p", {}, `${d.product_name || "Rental"} · ${formatDateTime(d.scheduled_start_at)} → ${formatDateTime(d.scheduled_end_at)}`),
     ]),
-    h("span", { class: `talus-badge talus-badge-${stage === "closed" ? "neutral" : stage === "overdue" ? "red" : stage === "on_rent" ? "blue" : stage === "settlement_pending" ? "amber" : stage === "ready_to_dispatch" ? "green" : "neutral"}` }, STAGE_LABEL[stage]),
+    h("span", { class: `talus-badge talus-badge-${stageBadgeColor}` }, STAGE_LABEL[stage]),
   ]));
 
   if (stage === "prepare" || stage === "ready_to_dispatch") {
@@ -187,13 +232,20 @@ function renderCommandCenter() {
     container.appendChild(renderInspectionCard("outbound", stage));
   } else if (stage === "on_rent" || stage === "overdue") {
     container.appendChild(renderTripCard(stage));
+    container.appendChild(renderReturnActionCard());
     container.appendChild(renderInspectionCard("inbound", stage));
-  } else if (stage === "settlement_pending") {
-    container.appendChild(renderSettlementCard());
+  } else if (stage === "returned") {
+    container.appendChild(renderInspectionCard("inbound", stage));
+    container.appendChild(renderReconciliationCard());
+    container.appendChild(renderCloseItemCard());
+  } else if (stage === "cancelled" || stage === "no_show") {
+    container.appendChild(h("div", { class: "talus-card" }, h("div", { class: "talus-card-body" }, [
+      h("p", {}, stage === "cancelled" ? "This reservation was cancelled. No dispatch actions are available." : "The customer did not show for this reservation. No dispatch actions are available."),
+    ])));
   } else {
     container.appendChild(h("div", { class: "talus-card" }, h("div", { class: "talus-card-body" }, [
-      h("p", {}, "This reservation is closed. No further dispatch actions are available."),
-      state.returnSummary ? h("p", { style: "color:var(--talus-muted);font-size:12.5px" }, `Settled ${formatDateTime(state.returnSummary.settled_at)} · Captured ${formatCurrency(state.returnSummary.captured_cents)} · Released ${formatCurrency(state.returnSummary.released_cents)}`) : null,
+      h("p", {}, "This item is closed. No further actions are available."),
+      state.returnSummary?.isSettled ? h("p", { style: "color:var(--talus-muted);font-size:12.5px" }, `Settled ${formatDateTime(state.returnSummary.settled_at)} · Captured ${formatCurrency(state.returnSummary.captured_cents)} · Released ${formatCurrency(state.returnSummary.released_cents)}`) : null,
     ].filter(Boolean))));
   }
 }
@@ -205,9 +257,9 @@ function renderGateCard(stage) {
   const body = h("div", { class: "talus-card-body" });
   body.appendChild(h("div", { class: "ops-gate-grid" }, [
     gateTile("Waiver", g.waiver_ready, "Digital waiver required"),
-    gateTile("Deposit", g.deposit_ready, "Authorization hold required"),
+    gateTile("Deposit", g.deposit_ready, "Authorization hold required", false, !g.deposit_required),
     gateTile("Assignment", g.assignment_ready, "Select an available unit"),
-    gateTile("Inspection", g.outbound_inspection_ready, g.outbound_inspection_unsafe ? "Unsafe — blocked, needs service" : "Complete the pre-trip inspection", g.outbound_inspection_unsafe),
+    gateTile("Pre-rental inspection", g.outbound_inspection_ready, g.outbound_inspection_unsafe ? "Unsafe — blocked, needs service" : "Complete the pre-rental inspection", g.outbound_inspection_unsafe, !g.outbound_inspection_required),
   ]));
   const fleetNumber = state.machines.find((m) => m.machine_id === (state.detail.machine_id || state.chosenMachineId))?.fleet_number;
   const dispatchKey = `dispatch:${state.selectedBookingItemId}`;
@@ -221,11 +273,12 @@ function renderGateCard(stage) {
   card.appendChild(body);
   return card;
 }
-function gateTile(label, ready, help, blocked = false) {
-  const cls = ready ? " is-ready" : blocked ? " is-blocked" : "";
+function gateTile(label, ready, help, blocked = false, notRequired = false) {
+  const cls = blocked ? " is-blocked" : ready ? " is-ready" : "";
+  const text = notRequired ? "Not required" : ready ? "Complete" : help;
   return h("div", { class: `ops-gate${cls}` }, [
     h("div", { class: "ops-gate-label" }, [icon(blocked ? "alert-triangle" : ready ? "check" : "circle-x", { size: 14 }), h("span", {}, label)]),
-    h("div", { class: `ops-gate-help${blocked ? " is-blocked-text" : ""}` }, ready ? "Complete" : help),
+    h("div", { class: `ops-gate-help${blocked ? " is-blocked-text" : ""}` }, text),
   ]);
 }
 
@@ -268,6 +321,25 @@ function renderTripCard(stage) {
   return card;
 }
 
+// The action that was previously unreachable: recording that the vehicle
+// physically came back. This ends the Trip immediately and does not wait
+// on the post-rental inspection or deposit reconciliation -- those are
+// tracked as independently-outstanding steps once the item reaches the
+// "returned" stage (see renderPostReturnCard).
+function renderReturnActionCard() {
+  const card = h("div", { class: "talus-card" });
+  card.appendChild(h("div", { class: "talus-card-head" }, h("div", {}, [h("h2", {}, "Record return"), h("p", {}, "Marks the vehicle physically back and ends the trip.")])));
+  const body = h("div", { class: "talus-card-body" });
+  const key = `return:${state.selectedBookingItemId}`;
+  body.appendChild(h("button", {
+    type: "button", class: "talus-btn talus-btn-primary", disabled: isPending(key),
+    onclick: () => recordReturn(),
+  }, isPending(key) ? "Recording…" : `Record physical return of ${state.detail.fleet_number || "unit"}`));
+  body.appendChild(h("div", { id: `${key}-error`, style: "color:var(--talus-red);font-size:12px;margin-top:6px" }));
+  card.appendChild(body);
+  return card;
+}
+
 /* ---------------------------------------------------------------------- *
  * Inspection
  * ---------------------------------------------------------------------- */
@@ -280,19 +352,29 @@ function emptyInspectionDraft() {
 }
 
 function renderInspectionCard(type, stage) {
-  const existing = type === "outbound" ? (state.gate?.outbound_inspection_ready) : (state.detail.inspections?.some((i) => i.inspection_type === "inbound"));
+  const d = state.detail;
+  const label = type === "outbound" ? "Pre-rental inspection" : "Post-rental inspection";
+  const required = type === "outbound" ? d.outbound_inspection_required : d.inbound_inspection_required;
   const card = h("div", { class: "talus-card" });
-  card.appendChild(h("div", { class: "talus-card-head" }, h("div", {}, [h("h2", {}, type === "outbound" ? "Pre-trip inspection" : "Post-trip inspection"), h("p", {}, "Completed inspections are sealed and immutable.")])));
+  card.appendChild(h("div", { class: "talus-card-head" }, h("div", {}, [
+    h("h2", {}, label),
+    h("p", {}, required === false ? "Not required by current policy for this tenant." : "Completed inspections are sealed and immutable."),
+  ])));
   const body = h("div", { class: "talus-card-body" });
-  const inspection = (state.detail.inspections || []).find((i) => i.inspection_type === type);
+  const inspection = (d.inspections || []).find((i) => i.inspection_type === type);
   if (inspection) {
     body.appendChild(h("div", { class: "ops-inspection-row" }, [
       h("span", {}, `${formatDateTime(inspection.completed_at)} · ${inspection.fuel_pct ?? "—"}% fuel · ${inspection.odometer_miles ?? "—"} mi`),
       h("span", { class: "talus-badge talus-badge-green" }, [icon("lock", { size: 12 }), "Sealed"]),
     ]));
   } else {
-    const disabled = type === "outbound" ? false : !state.detail.active_trip;
-    body.appendChild(h("button", { type: "button", class: "talus-btn", disabled, onclick: () => openInspectionDrawer(type) }, `Complete ${type === "outbound" ? "pre-trip" : "post-trip"} inspection`));
+    // A pre-rental inspection can only happen before checkout; a
+    // post-rental inspection can happen either before or after physical
+    // return is recorded (the walkaround at handoff, or afterward if the
+    // vehicle already came back) -- only truly blocked before dispatch.
+    const disabled = type === "inbound" && !d.active_trip && stage !== "returned";
+    body.appendChild(h("button", { type: "button", class: "talus-btn", disabled, onclick: () => openInspectionDrawer(type) }, `Complete ${label.toLowerCase()}`));
+    if (required === false) body.appendChild(h("p", { style: "color:var(--talus-muted);font-size:11.5px;margin-top:8px" }, "You may still record one if useful; it just isn't required to proceed."));
   }
   card.appendChild(body);
   return card;
@@ -422,7 +504,7 @@ function openInspectionReview() {
   const panel = h("div", { class: "talus-modal-panel" });
   const modal = h("div", { class: "talus-modal", role: "dialog", "aria-modal": "true", "aria-label": "Confirm inspection", tabindex: "-1" }, panel);
   document.body.appendChild(modal);
-  panel.append(
+  panel.append(...[
     h("h2", {}, "Complete inspection"),
     h("p", { style: "font-size:12.5px;color:var(--talus-muted)" }, `${state.detail.fleet_number || "Unit"} · ${state.detail.booking_reference} · ${state.detail.customer_name || "Customer"}`),
     unsafeItems.length ? h("p", { style: "color:var(--talus-red);font-weight:700;font-size:13px;margin-top:10px" }, `${unsafeItems.map((i) => i.item.replaceAll("_", " ")).join(", ")} marked unsafe. This will block dispatch and open a maintenance hold.`) : null,
@@ -432,7 +514,7 @@ function openInspectionReview() {
       h("button", { type: "button", class: "talus-btn", onclick: () => dialog.close() }, "Back"),
       h("button", { type: "button", class: "talus-btn talus-btn-primary", onclick: (event) => submitInspection(event, dialog) }, "Complete inspection"),
     ]),
-  );
+  ].filter((node) => node != null));
   const dialog = openDialog(modal, { onClose: () => modal.remove() });
 }
 
@@ -466,24 +548,27 @@ async function submitInspection(event, dialog) {
 }
 
 /* ---------------------------------------------------------------------- *
- * Settlement
+ * Post-return reconciliation and close
  * ---------------------------------------------------------------------- */
-function renderSettlementCard() {
+function renderReconciliationCard() {
   const s = state.returnSummary;
   const card = h("div", { class: "talus-card" });
-  card.appendChild(h("div", { class: "talus-card-head" }, h("div", {}, [h("h2", {}, "Return & deposit settlement"), h("p", {}, "Compare readings and settle the deposit hold.")])));
+  card.appendChild(h("div", { class: "talus-card-head" }, h("div", {}, [h("h2", {}, "Deposit reconciliation"), h("p", {}, "Compare readings and settle the deposit hold.")])));
   const body = h("div", { class: "talus-card-body" });
 
-  if (!state.detail.active_trip && !state.detail.inspections?.some((i) => i.inspection_type === "inbound" && i.status === "completed")) {
-    body.appendChild(h("p", { style: "color:var(--talus-muted);font-size:12.5px" }, "Complete the post-trip inspection above, then receive the return here."));
-    card.appendChild(body); return card;
-  }
-  if (state.detail.active_trip) {
-    body.appendChild(h("button", { type: "button", class: "talus-btn talus-btn-primary", onclick: () => receiveReturn() }, "Receive return"));
-    card.appendChild(body); return card;
-  }
-
   if (!s) { body.appendChild(h("p", {}, "Loading return summary…")); card.appendChild(body); return card; }
+
+  if (!s.hold_amount_cents) {
+    body.appendChild(h("p", { style: "color:var(--talus-muted);font-size:12.5px" }, "No deposit hold was authorized for this item -- nothing to reconcile."));
+    card.appendChild(body); return card;
+  }
+  if (s.isSettled) {
+    body.appendChild(h("p", {}, [
+      h("span", { class: "talus-badge talus-badge-green" }, [icon("check", { size: 12 }), "Settled"]),
+      document.createTextNode(` ${formatDateTime(s.settled_at)} · Charged ${formatCurrency(s.captured_cents)} · Released ${formatCurrency(s.released_cents)}`),
+    ]));
+    card.appendChild(body); return card;
+  }
 
   body.appendChild(h("div", { class: "ops-reconcile-grid" }, [
     reconcileTile("Authorized deposit", formatCurrency(s.hold_amount_cents)),
@@ -569,6 +654,33 @@ async function confirmSettle(event, dialog, fuel, mileage, damage) {
   }
 }
 
+// Final step of the return sequence: close the item once its outstanding
+// requirements (post-rental inspection if policy requires one, deposit
+// settlement if a hold exists) are resolved. Server-enforced -- the button
+// being enabled here is a convenience, not the actual authority.
+function renderCloseItemCard() {
+  const d = state.detail;
+  const s = state.returnSummary;
+  const inspectionOutstanding = d.inbound_inspection_required && !d.inbound_inspection_ready;
+  const settlementOutstanding = !!s?.hold_amount_cents && !s.isSettled;
+  const blockers = [inspectionOutstanding && "post-rental inspection", settlementOutstanding && "deposit reconciliation"].filter(Boolean);
+
+  const card = h("div", { class: "talus-card" });
+  card.appendChild(h("div", { class: "talus-card-head" }, h("div", {}, [h("h2", {}, "Close item"), h("p", {}, "Marks this unit's rental fully complete.")])));
+  const body = h("div", { class: "talus-card-body" });
+  if (blockers.length) {
+    body.appendChild(h("p", { style: "color:var(--talus-muted);font-size:12.5px" }, `Waiting on: ${blockers.join(", ")}.`));
+  }
+  const key = `close:${state.selectedBookingItemId}`;
+  body.appendChild(h("button", {
+    type: "button", class: "talus-btn talus-btn-primary", disabled: blockers.length > 0 || isPending(key),
+    onclick: () => closeItem(),
+  }, isPending(key) ? "Closing…" : "Close item"));
+  body.appendChild(h("div", { id: `${key}-error`, style: "color:var(--talus-red);font-size:12px;margin-top:6px" }));
+  card.appendChild(body);
+  return card;
+}
+
 /* ---------------------------------------------------------------------- *
  * Write actions: assign, dispatch, receive return
  * ---------------------------------------------------------------------- */
@@ -607,16 +719,42 @@ async function dispatchBooking(fleetNumber) {
   }
 }
 
-async function receiveReturn() {
+async function recordReturn() {
   const key = `return:${state.selectedBookingItemId}`;
-  const inbound = state.detail.inspections.find((i) => i.inspection_type === "inbound" && i.status === "completed");
-  if (!inbound) { toast("Complete the post-trip inspection first.", { kind: "error" }); return; }
+  const errorEl = document.querySelector(`#${CSS.escape(key)}-error`);
+  if (errorEl) errorEl.textContent = "";
+  // A completed post-rental inspection is attached if one already exists,
+  // but is never required here -- app.receive_booking_return enforces the
+  // actual tenant policy authoritatively.
+  const inbound = state.detail.inspections?.find((i) => i.inspection_type === "inbound" && i.status === "completed");
   try {
-    await withPending(key, () => api("/api/v1/operations/return", { method: "POST", body: { bookingItemId: state.selectedBookingItemId, inboundInspectionId: inbound.inspection_id, returnedAt: new Date().toISOString() } }));
-    toast("Return received.", { kind: "success" });
+    await withPending(key, () => api("/api/v1/operations/return", {
+      method: "POST",
+      body: { bookingItemId: state.selectedBookingItemId, inboundInspectionId: inbound?.inspection_id, returnedAt: new Date().toISOString() },
+    }));
+    toast("Return recorded.", { kind: "success" });
     await selectBooking(state.selectedBookingItemId);
     poller.refreshNow();
-  } catch (error) { toast(`Could not receive return: ${error.message}`, { kind: "error" }); }
+  } catch (error) {
+    renderCommandCenter();
+    const el = document.querySelector(`#${CSS.escape(key)}-error`);
+    const message = error.code === "RETURN_GATE_FAILED" ? "Tenant policy requires a completed post-rental inspection before return can be recorded." : `Could not record return: ${error.message}`;
+    if (el) el.textContent = message; else toast(message, { kind: "error" });
+  }
+}
+
+async function closeItem() {
+  const key = `close:${state.selectedBookingItemId}`;
+  try {
+    await withPending(key, () => api(`/api/v1/operations/booking-items/${state.selectedBookingItemId}/close`, { method: "POST", body: {} }));
+    toast("Item closed.", { kind: "success" });
+    await selectBooking(state.selectedBookingItemId);
+    poller.refreshNow();
+  } catch (error) {
+    renderCommandCenter();
+    const el = document.querySelector(`#${CSS.escape(key)}-error`);
+    if (el) el.textContent = `Could not close: ${error.message}`; else toast(`Could not close: ${error.message}`, { kind: "error" });
+  }
 }
 
 /* ---------------------------------------------------------------------- *

@@ -18,19 +18,24 @@ export async function getDispatchGateWorkflow(client, { bookingItemId, outboundI
          FROM app.tenant_waiver_policy
         WHERE tenant_id=${tenant}
         ORDER BY version_number DESC LIMIT 1
-     )
+     ),
+     inspection_policy AS (SELECT * FROM app.inspection_policy_effective()),
+     deposit_policy AS (SELECT app.deposit_required_effective() AS required)
      SELECT
        EXISTS (SELECT 1 FROM app.machine_occupancy o
                 WHERE o.tenant_id=${tenant} AND o.booking_item_id=$1
                   AND o.occupancy_kind='rental' AND o.blocking) AS assignment_ready,
+       (SELECT required FROM deposit_policy) AS deposit_required,
        EXISTS (SELECT 1 FROM app.booking_item_deposit_hold h
-                WHERE h.tenant_id=${tenant} AND h.booking_item_id=$1) AS deposit_ready,
+                WHERE h.tenant_id=${tenant} AND h.booking_item_id=$1)
+         OR NOT (SELECT required FROM deposit_policy) AS deposit_ready,
+       (SELECT pre_checkout_required FROM inspection_policy) AS outbound_inspection_required,
        EXISTS (SELECT 1 FROM app.inspection i
                 WHERE i.tenant_id=${tenant} AND i.booking_item_id=$1
                   AND i.inspection_type='outbound' AND i.status='completed'
                   AND ($2::uuid IS NULL OR i.inspection_id=$2)
                   AND NOT EXISTS (SELECT 1 FROM app.inspection_item ii WHERE ii.tenant_id=${tenant} AND ii.inspection_id=i.inspection_id AND ii.condition='fail')
-              ) AS outbound_inspection_ready,
+              ) OR NOT (SELECT pre_checkout_required FROM inspection_policy) AS outbound_inspection_ready,
        EXISTS (SELECT 1 FROM app.inspection i
                 WHERE i.tenant_id=${tenant} AND i.booking_item_id=$1
                   AND i.inspection_type='outbound' AND i.status='completed'
@@ -56,6 +61,9 @@ export async function getDispatchGateWorkflow(client, { bookingItemId, outboundI
     !gate.waiver_ready && "signed_waiver",
     !gate.deposit_ready && "deposit_hold",
     !gate.outbound_inspection_ready && "outbound_inspection",
+    // An unsafe finding blocks dispatch even when policy does not require
+    // the inspection at all -- a known safety issue is never ignorable.
+    gate.outbound_inspection_unsafe && "unsafe_inspection",
   ].filter(Boolean);
   return { isReady: missingRequirements.length === 0, missingRequirements, ...gate };
 }
@@ -76,15 +84,24 @@ export async function getDispatchBoardWorkflow(client, { date, categoryLocationI
   const rows = await client.query(
     `SELECT bi.booking_item_id, b.booking_id, b.booking_reference, b.state AS booking_state,
             bi.state AS booking_item_state, terms.category_location_id, terms.scheduled_start_at, terms.scheduled_end_at,
-            loc.timezone_name, customer.display_name AS customer_name, product.display_name AS product_name,
+            loc.timezone_name, customer.display_name AS customer_name,
+            COALESCE(cp.email, customer.email) AS customer_email, cp.phone AS customer_phone,
+            product.display_name AS product_name,
             assignment.machine_id, assignment.fleet_number,
+            app.deposit_required_effective() AS deposit_required,
             EXISTS (SELECT 1 FROM app.booking_item_deposit_hold h
-                     WHERE h.tenant_id=b.tenant_id AND h.booking_item_id=bi.booking_item_id) AS deposit_ready,
+                     WHERE h.tenant_id=b.tenant_id AND h.booking_item_id=bi.booking_item_id)
+              OR NOT app.deposit_required_effective() AS deposit_ready,
+            (SELECT pre_checkout_required FROM app.inspection_policy_effective()) AS outbound_inspection_required,
             EXISTS (SELECT 1 FROM app.inspection i WHERE i.tenant_id=b.tenant_id
                      AND i.booking_item_id=bi.booking_item_id AND i.inspection_type='outbound'
                      AND i.status='completed'
                      AND NOT EXISTS (SELECT 1 FROM app.inspection_item ii WHERE ii.tenant_id=b.tenant_id AND ii.inspection_id=i.inspection_id AND ii.condition='fail')
-                    ) AS outbound_inspection_ready,
+                    ) OR NOT (SELECT pre_checkout_required FROM app.inspection_policy_effective()) AS outbound_inspection_ready,
+            (SELECT post_return_required FROM app.inspection_policy_effective()) AS inbound_inspection_required,
+            EXISTS (SELECT 1 FROM app.inspection i WHERE i.tenant_id=b.tenant_id
+                     AND i.booking_item_id=bi.booking_item_id AND i.inspection_type='inbound' AND i.status='completed'
+                    ) AS inbound_inspection_ready,
             EXISTS (SELECT 1 FROM app.booking_driver d WHERE d.tenant_id=b.tenant_id AND d.booking_item_id=bi.booking_item_id)
             AND NOT EXISTS (
               SELECT 1 FROM app.booking_driver d
@@ -96,10 +113,18 @@ export async function getDispatchBoardWorkflow(client, { date, categoryLocationI
                       AND w.waiver_policy_version_id=(SELECT tenant_waiver_policy_id FROM app.tenant_waiver_policy p WHERE p.tenant_id=b.tenant_id ORDER BY p.version_number DESC LIMIT 1)
                  )
             ) AS waiver_ready,
+            NOT EXISTS (SELECT 1 FROM app.booking_item_deposit_hold h WHERE h.tenant_id=b.tenant_id AND h.booking_item_id=bi.booking_item_id)
+              OR EXISTS (
+                SELECT 1 FROM app.deposit_hold_settlement s
+                  JOIN app.trip tr ON tr.tenant_id=s.tenant_id AND tr.trip_id=s.trip_id
+                 WHERE tr.tenant_id=b.tenant_id AND tr.booking_item_id=bi.booking_item_id
+              ) AS settlement_ready,
             active_trip.trip_id IS NOT NULL AS active_trip,
             CASE
-              WHEN bi.state IN ('closed','cancelled','no_show') THEN 'closed'
-              WHEN bi.state = 'returned' THEN 'settlement_pending'
+              WHEN bi.state = 'cancelled' THEN 'cancelled'
+              WHEN bi.state = 'no_show' THEN 'no_show'
+              WHEN bi.state = 'closed' THEN 'closed'
+              WHEN bi.state = 'returned' THEN 'returned'
               WHEN active_trip.trip_id IS NOT NULL AND terms.scheduled_end_at < day.day_start THEN 'overdue'
               WHEN active_trip.trip_id IS NOT NULL AND terms.scheduled_end_at >= day.day_start AND terms.scheduled_end_at < day.day_end THEN 'return_due'
               WHEN active_trip.trip_id IS NOT NULL THEN 'on_rent'
@@ -113,16 +138,28 @@ export async function getDispatchBoardWorkflow(client, { date, categoryLocationI
        JOIN app.location loc ON loc.tenant_id=cl.tenant_id AND loc.location_id=cl.location_id
        LEFT JOIN app.booking_customer bc ON bc.tenant_id=b.tenant_id AND bc.booking_id=b.booking_id
        LEFT JOIN app.customer customer ON customer.tenant_id=bc.tenant_id AND customer.customer_id=bc.customer_id
+       LEFT JOIN app.customer_profile cp ON cp.tenant_id=customer.tenant_id AND cp.customer_id=customer.customer_id
        LEFT JOIN LATERAL (
          SELECT p.display_name FROM app.rental_product p
           WHERE p.tenant_id=terms.tenant_id AND p.category_location_id=terms.category_location_id AND p.active
           ORDER BY p.rental_product_id LIMIT 1
        ) product ON true
        LEFT JOIN LATERAL (
-         SELECT o.machine_id, m.fleet_number FROM app.machine_occupancy o
-         JOIN app.machine m ON m.tenant_id=o.tenant_id AND m.machine_id=o.machine_id
-         WHERE o.tenant_id=bi.tenant_id AND o.booking_item_id=bi.booking_item_id
-           AND o.occupancy_kind='rental' AND o.blocking LIMIT 1
+         -- Once a trip exists, its machine is the authoritative, stable
+         -- answer to "which machine is/was this item's" -- including after
+         -- return, when app.receive_booking_return frees the occupancy's
+         -- blocking flag so the machine can be reassigned elsewhere.
+         -- Before dispatch, fall back to the currently-blocking occupancy
+         -- (assigned but not yet checked out).
+         SELECT m.machine_id, m.fleet_number FROM app.machine m
+          WHERE m.tenant_id=bi.tenant_id AND m.machine_id = COALESCE(
+            (SELECT t.machine_id FROM app.trip t
+              WHERE t.tenant_id=bi.tenant_id AND t.booking_item_id=bi.booking_item_id
+              ORDER BY t.started_at DESC LIMIT 1),
+            (SELECT o.machine_id FROM app.machine_occupancy o
+              WHERE o.tenant_id=bi.tenant_id AND o.booking_item_id=bi.booking_item_id
+                AND o.occupancy_kind='rental' AND o.blocking LIMIT 1)
+          )
        ) assignment ON true
        LEFT JOIN LATERAL (
          SELECT t.trip_id FROM app.trip t
