@@ -145,20 +145,28 @@ describe("Tier 3 lifecycle perimeter", () => {
     expect(telemetry.statusCode).toBe(201);
     const frame = await asStaff((client) => client.query("SELECT latitude_microdegrees,fuel_pct FROM app.telemetry_frame WHERE machine_id=$1 ORDER BY recorded_at DESC LIMIT 1", [machineId]));
     expect(frame.rows[0]).toMatchObject({ latitude_microdegrees: 40760800, fuel_pct: 75 });
-    const settlement = await app.inject({ method: "POST", url: "/api/v1/operations/settle", headers: headers(staffToken, "staff"), payload: { bookingItemId, holdJournalEntryId, capturedCents: 250, releasedCents: 750, excessReceivableCents: 0, externalRef: `settle:${id()}` } });
+    const settlement = await app.inject({ method: "POST", url: "/api/v1/operations/settle", headers: headers(staffToken, "staff"), payload: { bookingItemId, damageChargeCents: 250 } });
     expect(settlement.statusCode).toBe(200);
+    expect(settlement.json()).toMatchObject({ settled: true, capturedCents: 250, releasedCents: 750, excessReceivableCents: 0 });
     const balance = await asStaff((client) => client.query("SELECT COALESCE(sum(CASE direction WHEN 'debit' THEN amount_cents ELSE -amount_cents END),0)::bigint AS balance FROM app.ledger_posting"));
     expect(balance.rows[0].balance).toBe("0");
     const trip = await asStaff((client) => client.query("SELECT ended_at FROM app.trip WHERE trip_id=$1", [tripId]));
     expect(trip.rows[0].ended_at).toBeTruthy();
   });
 
-  it("serializes competing settlement requests", async () => {
-    const { bookingItemId, holdJournalEntryId } = await createBookingAndReturn({ start: "2035-02-01T10:00:00Z", end: "2035-02-03T10:00:00Z" });
-    const payload = { bookingItemId, holdJournalEntryId, capturedCents: 100, releasedCents: 900, excessReceivableCents: 0 };
+  it("serializes competing settlement requests idempotently", async () => {
+    const { bookingItemId } = await createBookingAndReturn({ start: "2035-02-01T10:00:00Z", end: "2035-02-03T10:00:00Z" });
+    const payload = { bookingItemId, damageChargeCents: 100 };
     const responses = await Promise.all([1, 2].map(() => app.inject({ method: "POST", url: "/api/v1/operations/settle", headers: headers(staffToken, "staff"), payload })));
-    expect(responses.filter((response) => response.statusCode === 200)).toHaveLength(1);
-    expect(responses.find((response) => response.statusCode === 409)?.json().code).toBe("DEPOSIT_ALREADY_SETTLED");
+    // A concurrent duplicate settlement request must never error the caller
+    // out or double-post to the ledger -- it settles once and the loser of
+    // the race is told, successfully, that the trip is already settled with
+    // the same final amounts (retry-safe, idempotent settlement).
+    expect(responses.every((response) => response.statusCode === 200)).toBe(true);
+    const bodies = responses.map((response) => response.json());
+    expect(bodies.filter((body) => body.alreadySettled === true)).toHaveLength(1);
+    expect(bodies.filter((body) => body.alreadySettled === false)).toHaveLength(1);
+    for (const body of bodies) expect(body).toMatchObject({ capturedCents: 100, releasedCents: 900, excessReceivableCents: 0 });
   });
 
   it("enforces lifecycle, amount, device, and caller guards", async () => {
@@ -167,9 +175,13 @@ describe("Tier 3 lifecycle perimeter", () => {
     const notReturned = await app.inject({ method: "POST", url: "/api/v1/operations/settle", headers: headers(staffToken, "staff"), payload: { bookingItemId, holdJournalEntryId: id(), capturedCents: 0, releasedCents: 0, excessReceivableCents: 0 } });
     expect(notReturned.statusCode).toBe(409); expect(notReturned.json().code).toBe("TRIP_NOT_RETURNED");
     const returned = await createBookingAndReturn({ start: "2036-02-01T10:00:00Z", end: "2036-02-03T10:00:00Z" });
-    const holdJournalEntryId = returned.holdJournalEntryId;
-    const excessive = await app.inject({ method: "POST", url: "/api/v1/operations/settle", headers: headers(staffToken, "staff"), payload: { bookingItemId: returned.bookingItemId, holdJournalEntryId, capturedCents: 1001, releasedCents: 0, excessReceivableCents: 1 } });
-    expect(excessive.statusCode).toBe(422); expect(excessive.json().code).toBe("SETTLEMENT_EXCEEDS_HOLD");
+    // A damage charge that exceeds the deposit hold is a legitimate real-world
+    // outcome (the renter owes more than their deposit covered) -- the server
+    // caps the capture at the hold amount and books the remainder as an
+    // excess receivable rather than rejecting the settlement outright.
+    const excessive = await app.inject({ method: "POST", url: "/api/v1/operations/settle", headers: headers(staffToken, "staff"), payload: { bookingItemId: returned.bookingItemId, damageChargeCents: 1001 } });
+    expect(excessive.statusCode).toBe(200);
+    expect(excessive.json()).toMatchObject({ capturedCents: 1000, releasedCents: 0, excessReceivableCents: 1 });
     const mismatched = await app.inject({ method: "POST", url: "/api/v1/telemetry/ingest", headers: headers(deviceToken, "device"), payload: { deviceId, machineId: id(), recordedAt: "2036-01-01T12:00:00Z", latitude: 0, longitude: 0, speedMph: 0, engineHours: 1, fuelLevelBp: 100 } });
     expect(mismatched.statusCode).toBe(422); expect(mismatched.json().code).toBe("DEVICE_MACHINE_MISMATCH");
     for (const url of ["/api/v1/operations/assign", "/api/v1/operations/dispatch", "/api/v1/operations/return", "/api/v1/operations/settle", "/api/v1/telemetry/ingest"]) {

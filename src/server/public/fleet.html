@@ -7,72 +7,99 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQkS+8qL7PCfQKqV1a8P5xVd6dB8C3k=" crossorigin="" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <style>
-    :root { color-scheme: light; --cream:#eee7d5; --paper:#f8f3e8; --ink:#07141c; --muted:#657078; --line:#d3c9b5; --mint:#318768; --amber:#c98726; --red:#c84c38; --blue:#317a9b; }
-    *{box-sizing:border-box} body{margin:0;background:var(--cream);color:var(--ink);font-family:Inter,system-ui,sans-serif;min-width:1040px;overflow:hidden}
-    .condensed{font-family:"Barlow Condensed",Impact,sans-serif;letter-spacing:.055em}.shell{display:grid;grid-template-columns:236px 1fr;height:100vh}
-    nav{background:var(--cream);border-right:1px solid var(--line);padding:23px 16px;display:flex;flex-direction:column;gap:24px}.brand{display:flex;gap:11px;align-items:center;padding:0 8px}.logo{width:42px;height:42px;object-fit:cover;border-radius:9px}.brand b{font-size:22px}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:.18em;margin-top:2px}.nav-label{color:#8d877a;font-size:10px;padding:0 9px}.nav-item{padding:12px;border-radius:9px;color:#4f5a60;font-weight:600;font-size:13px;display:flex;gap:11px;align-items:center;cursor:pointer}.nav-item:hover{background:#e4dbc8;color:var(--ink)}.nav-item.active{background:var(--ink);color:var(--cream);border:1px solid var(--ink)}.nav-item .dot{width:7px;height:7px;border-radius:50%;background:#6bd7a7;margin-left:auto}.nav-spacer{flex:1}.connection{border-top:1px solid var(--line);padding:17px 8px 0;color:var(--muted);font-size:11px}.connection span{color:var(--mint);font-size:18px;vertical-align:-2px}
-    main{display:grid;grid-template-rows:70px 1fr;background:var(--paper)}.topbar{display:flex;align-items:center;gap:24px;padding:0 27px;border-bottom:1px solid var(--line);background:var(--paper)}.topbar h1{font-size:25px;margin:0}.yard{margin-left:auto;font-size:12px;color:var(--muted)}.yard .live{color:var(--mint);font-size:17px}.clock{font-weight:700}.seg{display:flex;background:#e5dcc8;border:1px solid var(--line);border-radius:9px;overflow:hidden}.seg button,.control-btn{border:0;color:var(--ink);background:transparent;padding:9px 12px;font:600 11px Inter;cursor:pointer}.seg button.active{background:var(--ink);color:var(--cream)}.control-btn{border:1px solid #9b927f;border-radius:8px}
-    .workspace{display:grid;grid-template-columns:minmax(600px,1fr) 352px;min-height:0}.map-wrap{position:relative;min-width:0}.map{height:100%;width:100%;background:#10243b}.leaflet-control-zoom a{background:#102336!important;color:#e8f0fa!important;border-color:#28455d!important}.leaflet-control-attribution{background:#08131fbb!important;color:#9bb0c1!important}.leaflet-control-attribution a{color:#6fbaf6!important}
-    .map-status{position:absolute;z-index:500;top:20px;left:20px;background:#0b1826e8;border:1px solid #294156;border-radius:12px;padding:14px 16px;min-width:164px;box-shadow:0 12px 30px #0005}.map-status h3{font-size:11px;color:#9db0c2;margin:0 0 10px}.legend{display:grid;gap:8px;font-size:11px;color:#c4d0db}.legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px}.map-summary{position:absolute;z-index:500;right:18px;top:18px;display:flex;gap:9px}.stat{background:#0b1826e8;border:1px solid #294156;border-radius:11px;padding:11px 14px;min-width:76px;text-align:center}.stat b{display:block;font:700 28px "Barlow Condensed";color:#fff}.stat small{font-size:9px;color:#9db0c2;letter-spacing:.1em}.map-bottom{position:absolute;bottom:18px;left:18px;z-index:500;display:flex;gap:8px}.map-bottom button{background:#0b1826e8;border:1px solid #294156;border-radius:8px;color:#c5d4e1;padding:9px 11px;font:600 10px Inter;cursor:pointer}.map-bottom button.active{background:#176b6f;border-color:#48d69a;color:#fff}
-    .vehicle-marker{background:none;border:0}.vehicle-pin{display:flex;align-items:center;gap:6px;filter:drop-shadow(0 2px 5px #000)}.vehicle-pin i{display:block;width:17px;height:17px;border:3px solid white;border-radius:50%;background:var(--mint);box-shadow:0 0 0 3px #12332d}.vehicle-pin.warning i{background:var(--amber);box-shadow:0 0 0 3px #533d12}.vehicle-pin.critical i{background:var(--red);box-shadow:0 0 0 3px #54221e}.vehicle-pin.offline i{background:#83919e;box-shadow:0 0 0 3px #263647}.vehicle-pin.maintenance i{background:#778797;box-shadow:0 0 0 3px #263647}.vehicle-pin span{background:#0b1826;color:#fff;border:1px solid #48657c;border-radius:5px;padding:4px 6px;font:700 11px "Barlow Condensed";letter-spacing:.07em;white-space:nowrap}
-    aside{border-left:1px solid var(--line);background:var(--paper);min-height:0;display:flex;flex-direction:column}.aside-head{padding:21px 20px 15px;border-bottom:1px solid var(--line);display:flex;align-items:center}.aside-head h2{font-size:19px;margin:0}.aside-head small{margin-left:auto;color:var(--mint);font-weight:700;font-size:10px}.alerts{overflow:auto;padding:12px;display:grid;gap:10px}.alert{border-radius:10px;border:1px solid var(--line);border-left:4px solid var(--amber);padding:14px;background:#f4ead3;cursor:pointer}.alert.critical{border-left-color:var(--red);background:#f3dfd8}.alert.high{border-left-color:#df6b4f;background:#f3dfd8}.alert .row{display:flex;gap:8px;align-items:center}.alert b{font:700 16px "Barlow Condensed";letter-spacing:.07em}.alert time{margin-left:auto;color:var(--muted);font-size:10px}.alert p{font-size:12px;line-height:1.45;color:#4e585d;margin:8px 0 12px}.alert button{background:transparent;color:var(--ink);border:1px solid #978d79;border-radius:6px;padding:7px 9px;font:700 10px Inter;cursor:pointer}.empty{padding:32px 18px;color:var(--muted);text-align:center;font-size:12px}
-    .drawer{position:absolute;z-index:700;top:0;bottom:0;right:0;width:392px;background:var(--paper);border-left:1px solid var(--line);transform:translateX(105%);transition:transform .22s ease;box-shadow:-22px 0 45px #0004;overflow:auto}.drawer.open{transform:translateX(0)}.drawer-head{padding:23px 23px 18px;border-bottom:1px solid var(--line);display:flex;gap:14px}.drawer-head h2{margin:0;font-size:30px}.drawer-head p{margin:4px 0 0;color:var(--muted);font-size:13px}.close{margin-left:auto;background:#e7decb;border:1px solid #b8ad98;color:var(--ink);width:34px;height:34px;border-radius:9px;font-size:20px;cursor:pointer}.drawer-inner{padding:22px}.pill{display:inline-flex;border-radius:999px;padding:6px 10px;font:700 11px Inter;letter-spacing:.08em;border:1px solid #7b837e;color:var(--ink)}.pill.warning{color:#8c5a09;border-color:#b38b49}.pill.critical{color:#a9382c;border-color:#b46860}.section-title{color:var(--muted);font-size:11px;margin:24px 0 11px}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.metric{background:#e9e1d0;border:1px solid var(--line);border-radius:9px;padding:11px}.metric label{display:block;color:var(--muted);font-size:9px;letter-spacing:.1em}.metric b{font:700 26px "Barlow Condensed";display:block;margin-top:5px}.gauge{margin:16px 0}.gauge-row{display:flex;justify-content:space-between;font-size:12px;color:#4f5b60}.gauge b{font-size:16px}.bar{height:8px;background:#d8cfbc;border-radius:999px;margin-top:8px;overflow:hidden}.bar span{height:100%;display:block;border-radius:999px;background:var(--mint)}.bar.warn span{background:var(--amber)}.chart{height:130px;background:#ede5d5;border:1px solid var(--line);border-radius:9px;padding:10px}.chart svg{width:100%;height:100%}.history{font-size:11px;color:var(--muted);margin-top:7px}.alert-row{padding:10px 0;border-bottom:1px solid var(--line);font-size:12px}.alert-row span{color:var(--muted)}.loading{display:grid;place-items:center;height:100%;color:var(--muted);font-size:13px}
-    @media(max-width:900px){body{min-width:0;overflow:auto}.shell{grid-template-columns:1fr}nav{display:none}.workspace{grid-template-columns:1fr;min-height:calc(100vh - 70px)}aside{display:none}.drawer{width:min(100%,392px)}.topbar{padding:0 13px;gap:10px}.yard{display:none}.map-summary{right:10px}.map-status{left:10px}.topbar h1{font-size:20px}}
-  </style>
+  <link rel="stylesheet" href="/assets/vendor/leaflet/leaflet.css" />
+  <script src="/assets/vendor/leaflet/leaflet.js"></script>
+  <link rel="stylesheet" href="/assets/css/tokens.css" />
+  <link rel="stylesheet" href="/assets/css/shell.css" />
+  <link rel="stylesheet" href="/assets/css/components.css" />
+  <link rel="stylesheet" href="/assets/css/fleet.css" />
 </head>
 <body>
-  <div class="shell">
-    <nav>
-      <div class="brand"><img class="logo" src="/assets/talus-logo.png" alt="Talus logo"><div><b class="condensed">TALUS</b><small>FLEET OS</small></div></div>
-      <div><div class="nav-label condensed">OPERATIONS</div><div class="nav-item active" onclick="location.href='/fleet'">◉ Live Fleet <span class="dot"></span></div><div class="nav-item" onclick="location.href='/ops'">▦ Dispatch Board</div><div class="nav-item">▣ Reservations</div></div>
-      <div><div class="nav-label condensed">MANAGEMENT</div><div class="nav-item">⌁ Fleet &amp; Service</div><div class="nav-item">◌ Customers</div><div class="nav-item">⚙ Rules &amp; Pricing</div></div>
-      <div class="nav-spacer"></div><div class="connection"><span>●</span> TELEMETRY LINK UP<br /><small id="fleetConnection">Connecting to fleet…</small></div>
-    </nav>
-    <main>
-      <header class="topbar"><h1 class="condensed">LIVE FLEET</h1><div class="yard"><span class="live">●</span> DEMO YARD</div><div class="clock" id="clock">--:--</div><div class="seg"><button class="active" id="roadLayer">ROAD</button><button id="satelliteLayer">SATELLITE</button></div><button class="control-btn" onclick="location.href='/ops'">DISPATCH BOARD ↗</button></header>
-      <section class="workspace">
-        <div class="map-wrap"><div id="map" class="map"><div class="loading">Loading live fleet telemetry…</div></div>
-          <div class="map-status"><h3 class="condensed">VEHICLE STATUS</h3><div class="legend"><span><i style="background:#48d69a"></i>Nominal / on trip</span><span><i style="background:#f3b34c"></i>Warning</span><span><i style="background:#f16e62"></i>Critical alert</span><span><i style="background:#83919e"></i>Offline / maintenance</span></div></div>
-          <div class="map-summary"><div class="stat"><b id="tripCount">0</b><small>ON TRIP</small></div><div class="stat"><b id="attentionCount">0</b><small>ATTENTION</small></div><div class="stat"><b id="maintenanceCount">0</b><small>MAINTENANCE</small></div></div>
-          <div class="map-bottom"><button class="active" id="fitFleet">FIT FLEET</button><button id="refreshFleet">REFRESH</button><button id="autoRefresh">LIVE: ON</button></div>
-          <div class="drawer" id="drawer"><div class="drawer-head"><div><h2 class="condensed" id="drawerTitle">VEHICLE</h2><p id="drawerSub">Loading telemetry…</p></div><button class="close" id="closeDrawer">×</button></div><div class="drawer-inner" id="drawerBody"></div></div>
+  <a class="talus-skip-link" href="#main">Skip to main content</a>
+  <div class="talus-shell">
+    <div id="navSlot"></div>
+    <div class="talus-content">
+      <header class="talus-topbar">
+        <h1 class="talus-condensed">LIVE FLEET</h1>
+        <div class="talus-topbar-meta" id="topbarMeta">
+          <span id="tenantLabel">Loading business…</span>
         </div>
-        <aside><div class="aside-head"><h2 class="condensed">ALERTS &amp; ACTIONS</h2><small>● LIVE</small></div><div class="alerts" id="alerts"><div class="empty">Loading active fleet alerts…</div></div></aside>
-      </section>
-    </main>
+        <div class="talus-topbar-spacer"></div>
+        <time class="talus-clock" id="clock" aria-hidden="true">--:--</time>
+        <div class="talus-seg" role="group" aria-label="Map layer">
+          <button type="button" id="roadLayerBtn" aria-pressed="true">Road</button>
+          <button type="button" id="satelliteLayerBtn" aria-pressed="false">Satellite</button>
+        </div>
+        <button type="button" class="talus-icon-btn" id="logoutButton" aria-label="Sign out"></button>
+      </header>
+
+      <div id="connectionBanner" class="talus-banner" role="status" hidden></div>
+
+      <div class="fleet-summary-strip" role="group" aria-label="Filter fleet by status" id="summaryStrip"></div>
+
+      <main id="main" class="fleet-main">
+        <section class="fleet-map-region is-active-tab" id="mapRegion" aria-label="Fleet map">
+          <div class="fleet-map-toolbar">
+            <div class="fleet-chip-group" role="group" aria-label="Show">
+              <button type="button" class="fleet-chip" data-scope="rented" aria-pressed="true">Rented</button>
+              <button type="button" class="fleet-chip" data-scope="yard" aria-pressed="false">Yard</button>
+              <button type="button" class="fleet-chip" data-scope="service" aria-pressed="false">Service</button>
+              <button type="button" class="fleet-chip" data-scope="all" aria-pressed="false">All</button>
+            </div>
+            <label class="fleet-search">
+              <span class="talus-visually-hidden">Search fleet</span>
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+              <input type="search" id="fleetSearch" placeholder="Search fleet number…" />
+            </label>
+            <button type="button" class="talus-btn" id="toggleListView" aria-pressed="false">List view</button>
+          </div>
+
+          <div id="map" class="fleet-map" role="application" aria-label="Fleet map. A searchable list view is available as an alternative."></div>
+          <div id="mapStatus" class="fleet-map-status"><p>Loading live fleet telemetry…</p></div>
+
+          <div class="fleet-map-legend" aria-hidden="true">
+            <strong class="talus-condensed" style="letter-spacing:.08em;font-size:11px">VEHICLE STATUS</strong>
+            <div class="fleet-map-legend-row"><span class="talus-dot talus-dot-green"></span>On rent / ready</div>
+            <div class="fleet-map-legend-row"><span class="talus-dot talus-dot-red"></span>Urgent incident</div>
+            <div class="fleet-map-legend-row"><span class="talus-dot talus-dot-amber"></span>GPS stale</div>
+            <div class="fleet-map-legend-row"><span class="talus-dot talus-dot-neutral"></span>Maintenance</div>
+          </div>
+
+          <div class="fleet-map-controls">
+            <button type="button" id="fitFleetButton">Fit fleet</button>
+            <button type="button" id="refreshButton">Refresh</button>
+            <button type="button" id="autoRefreshButton" aria-pressed="true">Live: on</button>
+          </div>
+
+          <div id="listPanel" class="fleet-list-panel" hidden></div>
+
+          <div id="detailDrawer" class="talus-drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" tabindex="-1" hidden>
+            <div class="talus-drawer-head">
+              <div>
+                <h2 class="talus-condensed" id="drawerTitle">Detail</h2>
+                <p id="drawerSubtitle"></p>
+              </div>
+              <button type="button" class="talus-icon-btn" id="closeDrawerButton" aria-label="Close" style="margin-left:auto"></button>
+            </div>
+            <div class="talus-drawer-body" id="drawerBody"></div>
+            <div class="talus-drawer-foot" id="drawerFoot" hidden></div>
+          </div>
+        </section>
+
+        <aside class="fleet-incident-rail" id="incidentRail" aria-label="Open incidents">
+          <div class="fleet-rail-head">
+            <h2 class="talus-condensed">INCIDENTS</h2>
+            <div class="fleet-rail-filters" role="group" aria-label="Incident filter">
+              <button type="button" class="talus-btn talus-btn-sm" id="incidentFilterOpen" aria-pressed="true">Open</button>
+              <button type="button" class="talus-btn talus-btn-sm" id="incidentFilterResolved" aria-pressed="false">Resolved</button>
+            </div>
+          </div>
+          <div class="fleet-rail-list" id="incidentList"></div>
+        </aside>
+      </main>
+    </div>
   </div>
-  <script>
-    const state = { map:null, road:null, satellite:null, markers:new Map(), polygons:[], context:null, timer:null, auto:true, machines:[] };
-    const demoCenter = [37.106, -113.58];
-    const statusClass = (value) => value === 'critical' ? 'critical' : ['warning','high','medium','low'].includes(value) ? 'warning' : ['offline','maintenance'].includes(value) ? 'offline' : '';
-    const fmt = (value, suffix='') => value == null ? '—' : `${value}${suffix}`;
-    const elapsed = (date) => { if (!date) return 'No recent ping'; const seconds=Math.max(0,Math.round((Date.now()-new Date(date))/1000)); return seconds<60 ? `${seconds}s ago` : seconds<3600 ? `${Math.round(seconds/60)}m ago` : `${Math.round(seconds/3600)}h ago`; };
-    function headers(){ return { authorization:`Bearer ${state.context.staffToken}`, 'x-tenant-id':state.context.tenantId, 'x-actor-kind':'staff', 'x-actor-id':state.context.ownerPrincipalId }; }
-    async function api(path){ const response=await fetch(path,{headers:headers()}); if(!response.ok) throw new Error(`${response.status} ${await response.text()}`); return response.json(); }
-    function initMap(){
-      state.map=L.map('map',{zoomControl:false,attributionControl:true}).setView(demoCenter, 12); L.control.zoom({position:'bottomright'}).addTo(state.map);
-      state.road=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(state.map);
-      state.satellite=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles © Esri'});
-      document.querySelector('#roadLayer').onclick=()=>setLayer('road');document.querySelector('#satelliteLayer').onclick=()=>setLayer('satellite');
-    }
-    function setLayer(which){ const satellite=which==='satellite'; if(satellite){state.map.removeLayer(state.road);state.satellite.addTo(state.map)} else {state.map.removeLayer(state.satellite);state.road.addTo(state.map)} document.querySelector('#roadLayer').classList.toggle('active',!satellite);document.querySelector('#satelliteLayer').classList.toggle('active',satellite); }
-    function markerIcon(machine){ const klass=statusClass(machine.marker_state); return L.divIcon({className:'vehicle-marker',html:`<div class="vehicle-pin ${klass}"><i></i><span>${machine.fleet_number || machine.display_name}</span></div>`,iconAnchor:[8,8]}); }
-    function renderMachines(machines){
-      state.machines=machines; state.markers.forEach(marker=>marker.remove());state.markers.clear(); const bounds=[];
-      machines.forEach(machine=>{if(machine.latitude==null||machine.longitude==null)return; const marker=L.marker([machine.latitude,machine.longitude],{icon:markerIcon(machine)}).addTo(state.map).on('click',()=>showMachine(machine.machine_id));state.markers.set(machine.machine_id,marker);bounds.push([machine.latitude,machine.longitude]);});
-      if(bounds.length) state.map.fitBounds(bounds,{padding:[65,65],maxZoom:14});
-      document.querySelector('#fleetConnection').textContent=`${machines.length} units · ${machines.filter(m=>m.last_seen_at).length} reporting`;
-    }
-    function renderAlerts(alerts){ const target=document.querySelector('#alerts');if(!alerts.length){target.innerHTML='<div class="empty">No fleet alerts for this tenant.</div>';return;} target.innerHTML=alerts.map(alert=>`<article class="alert ${alert.severity==='critical'?'critical':alert.severity==='high'?'high':''}" data-machine="${alert.machine_id}"><div class="row"><b>${alert.fleet_number || 'UNIT'} · ${(alert.alert_kind||'alert').replaceAll('_',' ').toUpperCase()}</b><time>${elapsed(alert.triggered_at)}</time></div><p>${alert.payload?.message || alert.payload?.speed_mph ? `Reported value: ${alert.payload.speed_mph ?? ''} ${alert.payload.message ?? ''}` : 'A telemetry safety rule requires attention.'}</p><button onclick="showMachine('${alert.machine_id}')">LOCATE</button></article>`).join(''); }
-    function renderGeofences(geofences){state.polygons.forEach(poly=>poly.remove());state.polygons=[];geofences.forEach(fence=>{const c=fence.geometry?.coordinates;if(!c)return;const rings=fence.geometry.type==='Polygon'?c:(fence.geometry.type==='MultiPolygon'?c.flat():null);if(!rings)return;const coordinates=rings.map(ring=>ring.map(([lng,lat])=>[lat,lng]));const poly=L.polygon(coordinates,{color:'#4ad89c',weight:2,dashArray:'8 8',fillColor:'#34c98b',fillOpacity:.08}).addTo(state.map).bindTooltip(fence.display_name,{permanent:false});state.polygons.push(poly);});}
-    function sparkline(history){if(history.length<2)return '<div class="history">No speed history is available yet.</div>';const max=Math.max(1,...history.map(point=>Number(point.speed_mph||0)));const points=history.map((point,index)=>`${(index/(history.length-1))*300},${96-(Number(point.speed_mph||0)/max)*82}`).join(' ');return `<div class="chart"><svg viewBox="0 0 300 110" preserveAspectRatio="none"><line x1="0" y1="15" x2="300" y2="15" stroke="#b86050" stroke-dasharray="5 5"/><polyline points="${points}" fill="none" stroke="#57c6f8" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/></svg></div><div class="history">Trip telemetry · peak ${max} mph</div>`;}
-    async function showMachine(machineId){try{const detail=await api(`/api/v1/fleet/machines/${machineId}`);const m=detail.machine;document.querySelector('#drawerTitle').textContent=m.fleet_number||m.display_name;document.querySelector('#drawerSub').textContent=`${m.display_name} · ${elapsed(m.last_seen_at)}`;const warning=statusClass(m.marker_state);document.querySelector('#drawerBody').innerHTML=`<span class="pill ${warning}">${(m.marker_state||'unknown').replaceAll('_',' ').toUpperCase()}</span><div class="section-title condensed">LIVE TELEMETRY</div><div class="metrics"><div class="metric"><label>SPEED</label><b>${fmt(m.speed_mph,' mph')}</b></div><div class="metric"><label>ENGINE HRS</label><b>${fmt(m.engine_hours)}</b></div><div class="metric"><label>LAST PING</label><b>${m.last_seen_at?elapsed(m.last_seen_at):'—'}</b></div></div><div class="gauge"><div class="gauge-row"><span>Fuel level</span><b>${fmt(m.fuel_pct,'%')}</b></div><div class="bar ${m.fuel_pct!=null&&m.fuel_pct<25?'warn':''}"><span style="width:${Math.max(0,Math.min(100,m.fuel_pct??0))}%"></span></div></div><div class="gauge"><div class="gauge-row"><span>Battery</span><b>${m.battery_level_bp==null?'—':`${Math.round(m.battery_level_bp/100)}%`}</b></div><div class="bar"><span style="width:${Math.max(0,Math.min(100,(m.battery_level_bp??0)/100))}%"></span></div></div><div class="section-title condensed">SPEED OVER RECENT PINGS</div>${sparkline(detail.telemetryHistory)}<div class="section-title condensed">RECENT ALERTS</div>${detail.alerts.length?detail.alerts.map(alert=>`<div class="alert-row"><b>${alert.alert_kind.replaceAll('_',' ').toUpperCase()}</b><br><span>${elapsed(alert.triggered_at)} · ${alert.severity}</span></div>`).join(''):'<div class="history">No alerts recorded for this unit.</div>'}`;document.querySelector('#drawer').classList.add('open');const marker=state.markers.get(machineId);if(marker)state.map.panTo(marker.getLatLng());}catch(error){console.error(error);}}
-    async function refresh(){try{const [live,alerts,geofences]=await Promise.all([api('/api/v1/fleet/live'),api('/api/v1/fleet/alerts'),api('/api/v1/fleet/geofences')]);renderMachines(live.machines);renderAlerts(alerts.alerts);renderGeofences(geofences.geofences);document.querySelector('#tripCount').textContent=live.summary.onTrip;document.querySelector('#attentionCount').textContent=live.summary.attention;document.querySelector('#maintenanceCount').textContent=live.summary.maintenance;}catch(error){console.error('Fleet refresh failed',error);document.querySelector('#alerts').innerHTML=`<div class="empty">Fleet data could not be loaded.<br><small>${error.message}</small></div>`;}}
-    async function boot(){try{state.context=await (await fetch('/ops/api/bootstrap')).json();initMap();await refresh();state.timer=setInterval(()=>{if(state.auto)refresh()},20000);}catch(error){document.querySelector('#map').innerHTML=`<div class="loading">Unable to start the local fleet console: ${error.message}</div>`;}}
-    document.querySelector('#closeDrawer').onclick=()=>document.querySelector('#drawer').classList.remove('open');document.querySelector('#refreshFleet').onclick=refresh;document.querySelector('#fitFleet').onclick=()=>{const points=[...state.markers.values()].map(marker=>marker.getLatLng());if(points.length)state.map.fitBounds(points,{padding:[65,65],maxZoom:14});};document.querySelector('#autoRefresh').onclick=(event)=>{state.auto=!state.auto;event.target.textContent=`LIVE: ${state.auto?'ON':'PAUSED'}`;event.target.classList.toggle('active',state.auto);};setInterval(()=>document.querySelector('#clock').textContent=new Intl.DateTimeFormat([], {hour:'numeric',minute:'2-digit',second:'2-digit'}).format(new Date()),1000);window.showMachine=showMachine;boot();
-  </script>
+  <div id="tabbarSlot"></div>
+  <script type="module" src="/assets/js/fleet-app.js"></script>
 </body>
 </html>

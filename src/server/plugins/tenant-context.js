@@ -1,8 +1,11 @@
 export async function tenantContextPlugin(fastify) {
   fastify.decorateRequest("talusContext", null);
   fastify.addHook("onRequest", async (request, reply) => {
-    // Health probes intentionally remain outside the authenticated tenant API.
-    if (request.url.startsWith("/health/") || request.url.startsWith("/docs") || request.url.startsWith("/ops") || request.url.startsWith("/fleet") || request.url.startsWith("/assets/") || request.url.startsWith("/book") || request.url.startsWith("/waiver/") || request.url.includes("/waiver-context")) return;
+    // Health probes, static console shells, and the staff login endpoint
+    // itself (no token exists yet at login time) intentionally remain
+    // outside the authenticated tenant API. /auth/refresh and /auth/logout
+    // are NOT exempted here -- they require an already-active session.
+    if (request.url.startsWith("/health/") || request.url.startsWith("/docs") || request.url.startsWith("/ops") || request.url.startsWith("/fleet") || request.url.startsWith("/assets/") || request.url.startsWith("/book") || request.url.startsWith("/waiver/") || request.url.includes("/waiver-context") || request.url.startsWith("/auth/login") || request.url.startsWith("/login")) return;
     const tenantId = request.headers["x-tenant-id"];
     const actorKind = request.headers["x-actor-kind"];
     const actorId = request.headers["x-actor-id"];

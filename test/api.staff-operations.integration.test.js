@@ -58,11 +58,11 @@ it("runs the staff board lifecycle and enforces every dispatch prerequisite", as
   expect((await app.inject({ method: "POST", url: `/api/v1/bookings/${bookingItemId}/waivers`, headers: headers(), payload: { customerId, signerName: "Staff Customer", signatureRef: `sig:${id()}`, signerIp: "127.0.0.1" } })).statusCode).toBe(201);
   const hold = await app.inject({ method: "POST", url: `/api/v1/bookings/${bookingItemId}/deposit-hold`, headers: headers(), payload: { amountCents: 100000, paymentReference: `hold:${id()}` } });
   expect(hold.statusCode).toBe(200);
-  const outbound = await app.inject({ method: "POST", url: "/api/v1/inspections", headers: headers(), payload: { bookingItemId, machineId, type: "outbound", fuelLevelPct: 100, odometerMiles: 1200, notes: "baseline", checkItems: [{ item: "tires", passed: true }, { item: "body_panels", passed: true }] } });
+  const outbound = await app.inject({ method: "POST", url: "/api/v1/inspections", headers: headers(), payload: { bookingItemId, machineId, type: "outbound", fuelLevelPct: 100, odometerMiles: 1200, notes: "baseline", checkItems: [{ item: "tires", outcome: "pass" }, { item: "brakes", outcome: "pass" }, { item: "body_panels", outcome: "pass" }, { item: "safety_gear", outcome: "pass" }] } });
   expect(outbound.statusCode).toBe(201);
   dispatch = await app.inject({ method: "POST", url: "/api/v1/operations/dispatch", headers: headers(), payload: { bookingItemId, outboundInspectionId: outbound.json().inspectionId, dispatchedAt: "2040-06-01T10:00:00Z" } });
   expect(dispatch.statusCode).toBe(200);
-  const inbound = await app.inject({ method: "POST", url: "/api/v1/inspections", headers: headers(), payload: { bookingItemId, machineId, type: "inbound", fuelLevelPct: 90, odometerMiles: 1225, notes: "return", checkItems: [{ item: "tires", passed: true }] } });
+  const inbound = await app.inject({ method: "POST", url: "/api/v1/inspections", headers: headers(), payload: { bookingItemId, machineId, type: "inbound", fuelLevelPct: 90, odometerMiles: 1225, notes: "return", checkItems: [{ item: "tires", outcome: "pass" }, { item: "brakes", outcome: "pass" }, { item: "body_panels", outcome: "pass" }, { item: "safety_gear", outcome: "pass" }] } });
   expect(inbound.statusCode).toBe(201);
   expect((await app.inject({ method: "POST", url: "/api/v1/operations/return", headers: headers(), payload: { bookingItemId, inboundInspectionId: inbound.json().inspectionId, returnedAt: "2040-06-02T10:00:00Z", fuelChargeCents: 0, excessMileageCents: 0 } })).statusCode).toBe(200);
   const summary = await app.inject({ method: "GET", url: `/api/v1/operations/booking-items/${bookingItemId}/return-summary`, headers: headers() });

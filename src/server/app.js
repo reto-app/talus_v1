@@ -1,7 +1,11 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import sensible from "@fastify/sensible";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
+import fastifyStatic from "@fastify/static";
 import { tenantContextPlugin } from "./plugins/tenant-context.js";
 import { withTenantTransaction } from "../db/transaction.js";
 import { generateQuote,createBookingWorkflow,executeWaiverWorkflow,getDispatchReadinessWorkflow } from "../services/booking-service.js";
@@ -13,6 +17,9 @@ import { inspectionRoutes } from "./routes/inspection-routes.js";
 import { depositRoutes } from "./routes/deposit-routes.js";
 import { customerRoutes } from "./routes/customer-routes.js";
 import { fleetRoutes } from "./routes/fleet-routes.js";
+import { authRoutes } from "./routes/auth-routes.js";
+import { incidentRoutes } from "./routes/incident-routes.js";
+import { evidenceRoutes } from "./routes/evidence-routes.js";
 export async function buildApp(pool,fastifyFactory=Fastify) {
   const app = fastifyFactory();
   app.decorate("talusReadiness", { isShuttingDown: false });
@@ -29,10 +36,21 @@ export async function buildApp(pool,fastifyFactory=Fastify) {
     },
   });
   await app.register(swaggerUi, { routePrefix: "/docs", uiConfig: { docExpansion: "list", deepLinking: true } });
+  await app.register(fastifyStatic, {
+    root: path.join(path.dirname(fileURLToPath(import.meta.url)), "public", "assets"),
+    prefix: "/assets/",
+    decorateReply: false,
+  });
   await tenantContextPlugin(app);
   await healthRoutes(app,{pool,readiness:app.talusReadiness});
+  app.get("/login", async (_request, reply) => reply.type("text/html; charset=utf-8").send(
+    await readFile(new URL("./public/login.html", import.meta.url), "utf8"),
+  ));
+  await app.register(authRoutes,{pool});
   await app.register(opsRoutes,{pool});
   await app.register(fleetRoutes,{pool});
+  await app.register(incidentRoutes,{pool});
+  await app.register(evidenceRoutes,{pool});
   const tx=(r,fn)=>withTenantTransaction(pool,r.talusContext,fn);
   app.post("/api/v1/quotes",async(r)=>tx(r,c=>generateQuote(c,r.body)));
   app.post("/api/v1/bookings",async(r,reply)=>{if(r.talusContext.actorKind==="customer")return reply.forbidden();return reply.code(201).send(await tx(r,c=>createBookingWorkflow(c,r.body)))});

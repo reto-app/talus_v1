@@ -1,0 +1,59 @@
+/*
+  Talus design tokens. One source of truth for color, type, spacing, and
+  motion so fleet.html and ops.html render as one visual system instead of
+  two unrelated skins.
+*/
+:root {
+  color-scheme: light;
+
+  /* Core brand palette (do not introduce additional brand hues). */
+  --talus-cream: #eee7d5;
+  --talus-paper: #f8f3e8;
+  --talus-ink: #07141c;
+  --talus-line: #d3c9b5;
+  --talus-line-strong: #b8ad98;
+  --talus-muted: #5b6570;
+  --talus-muted-on-dark: #9db0c2;
+
+  /* Status colors: green = verified/healthy, amber = attention, red = urgent/blocked. */
+  --talus-green: #1f7a53;
+  --talus-green-bg: #e1f0e6;
+  --talus-amber: #92590a;
+  --talus-amber-bg: #f7e6c4;
+  --talus-red: #a12f1f;
+  --talus-red-bg: #f6dcd6;
+  --talus-blue: #1f5f7a;
+  --talus-blue-bg: #dcebf1;
+
+  /* Dark surfaces used only for the map canvas + its floating chrome. */
+  --talus-night: #0b1826;
+  --talus-night-line: #294156;
+  --talus-night-text: #dbe6ef;
+
+  --talus-font-ui: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --talus-font-display: "Barlow Condensed", Impact, "Segoe UI", sans-serif;
+
+  --talus-radius-sm: 6px;
+  --talus-radius-md: 10px;
+  --talus-radius-lg: 14px;
+
+  /* Shared height for one row of same-level controls (buttons, chip
+     groups, search fields) so a toolbar never mixes 36/38/44/48px boxes. */
+  --talus-control-height: 44px;
+  --talus-control-height-sm: 36px;
+
+  --talus-shadow-card: 0 1px 2px rgba(7, 20, 28, 0.06), 0 8px 24px rgba(7, 20, 28, 0.08);
+  --talus-shadow-float: 0 12px 30px rgba(7, 20, 28, 0.25);
+
+  --talus-focus-ring: 0 0 0 3px #fff, 0 0 0 5px var(--talus-ink);
+  --talus-focus-ring-dark: 0 0 0 3px #0b1826, 0 0 0 5px #7fd4ff;
+
+  --talus-nav-width: 236px;
+  --talus-nav-width-rail: 76px;
+  --talus-topbar-height: 64px;
+  --talus-tabbar-height: 60px;
+}
+
+/* Contrast-checked text roles used on the cream/paper surfaces:
+   --talus-ink on cream/paper > 14:1; --talus-muted on cream/paper ~4.6:1 (AA);
+   status text colors above are chosen to hit 4.5:1 on their own *-bg tokens. */

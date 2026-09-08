@@ -62,7 +62,7 @@ async function run() {
     console.log("✔ [5/9] Assigned machine RZR-101 to booking");
 
     const hold = assertStatus(5, await app.inject({ method: "POST", url: `/api/v1/bookings/${bookingItemId}/deposit-hold`, headers: headers(staffToken, "staff"), payload: { amountCents: 100000, paymentReference: `smoke-hold:${id()}` } }), 200);
-    const outbound = assertStatus(5, await app.inject({ method: "POST", url: "/api/v1/inspections", headers: headers(staffToken, "staff"), payload: { bookingItemId, machineId: ids.machine1, type: "outbound", fuelLevelPct: 100, odometerMiles: 1240, notes: "Smoke outbound", checkItems: [{ item: "tires", passed: true }, { item: "brakes", passed: true }] } }), 201);
+    const outbound = assertStatus(5, await app.inject({ method: "POST", url: "/api/v1/inspections", headers: headers(staffToken, "staff"), payload: { bookingItemId, machineId: ids.machine1, type: "outbound", fuelLevelPct: 100, odometerMiles: 1240, notes: "Smoke outbound", checkItems: [{ item: "tires", outcome: "pass" }, { item: "brakes", outcome: "pass" }, { item: "body_panels", outcome: "pass" }, { item: "safety_gear", outcome: "pass" }] } }), 201);
     const readiness = assertStatus(6, await app.inject({ method: "GET", url: `/api/v1/bookings/${bookingItemId}/dispatch-readiness`, headers: headers(staffToken, "staff") }), 200);
     if (!readiness.isReady) fail(6, { statusCode: 422, json: () => readiness });
     const dispatch = assertStatus(6, await app.inject({ method: "POST", url: "/api/v1/operations/dispatch", headers: headers(staffToken, "staff"), payload: { bookingItemId, outboundInspectionId: outbound.inspectionId, dispatchedAt: period.start } }), 200);
@@ -72,7 +72,7 @@ async function run() {
     assertStatus(7, await app.inject({ method: "POST", url: "/api/v1/telemetry/ingest", headers: headers(deviceToken, "device"), payload: { deviceId: ids.device, machineId: ids.machine1, recordedAt: "2037-06-01T12:00:00Z", latitude: 37.0965, longitude: -113.5684, speedMph: 18, engineHours: 86, fuelLevelBp: 9500, rawPayload: { source: "smoke-test" } } }), 201);
     console.log("✔ [7/9] Telemetry frame ingested (GPS ping recorded, 95% fuel)");
 
-    const inbound = assertStatus(8, await app.inject({ method: "POST", url: "/api/v1/inspections", headers: headers(staffToken, "staff"), payload: { bookingItemId, machineId: ids.machine1, type: "inbound", fuelLevelPct: 95, odometerMiles: 1260, notes: "Smoke inbound", checkItems: [{ item: "tires", passed: true }, { item: "brakes", passed: true }] } }), 201);
+    const inbound = assertStatus(8, await app.inject({ method: "POST", url: "/api/v1/inspections", headers: headers(staffToken, "staff"), payload: { bookingItemId, machineId: ids.machine1, type: "inbound", fuelLevelPct: 95, odometerMiles: 1260, notes: "Smoke inbound", checkItems: [{ item: "tires", outcome: "pass" }, { item: "brakes", outcome: "pass" }, { item: "body_panels", outcome: "pass" }, { item: "safety_gear", outcome: "pass" }] } }), 201);
     assertStatus(8, await app.inject({ method: "POST", url: "/api/v1/operations/return", headers: headers(staffToken, "staff"), payload: { bookingItemId, inboundInspectionId: inbound.inspectionId, returnedAt: period.end, fuelChargeCents: 0, excessMileageCents: 0 } }), 200);
     console.log("✔ [8/9] Vehicle returned, trip closed, occupancy clamped");
 

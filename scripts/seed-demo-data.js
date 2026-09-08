@@ -1,5 +1,9 @@
 import { Pool } from "pg";
 
+const DEMO_TENANT_SLUG = "red-rock-powersports";
+const DEMO_STAFF_EMAIL = "jordan@redrockpowersports.example";
+const DEMO_STAFF_PASSWORD = "TalusYard!2394";
+
 const ids = {
   tenant: "11111111-1111-1111-1111-111111111111",
   staffUser: "22222222-2222-2222-2222-222222222222",
@@ -39,7 +43,7 @@ export async function seedDemoData() {
     const tenant = await client.query("SELECT 1 FROM app.tenant WHERE tenant_id=$1", [ids.tenant]);
     if (!tenant.rowCount) {
       await client.query("SELECT app.onboard_tenant($1,$2,$3,$4,$5)", [
-        ids.tenant, "red-rock-powersports", "Red Rock Powersports", ids.staffUser, ids.ownerPrincipal,
+        ids.tenant, DEMO_TENANT_SLUG, "Red Rock Powersports", ids.staffUser, ids.ownerPrincipal,
       ]);
     }
 
@@ -99,6 +103,13 @@ export async function seedDemoData() {
 
     const customerToken = (await client.query("SELECT app.issue_context_assertion($1,$2,'customer',NULL,interval '15 minutes') AS token", [ids.tenant, ids.customerPrincipal])).rows[0].token;
     const deviceToken = (await client.query("SELECT app.issue_context_assertion($1,$2,'device',NULL,interval '15 minutes') AS token", [ids.tenant, ids.devicePrincipal])).rows[0].token;
+
+    await client.query(
+      "UPDATE app.staff_user SET display_name='Jordan Ruiz', email=$2 WHERE tenant_id=$1 AND staff_user_id=$3",
+      [ids.tenant, DEMO_STAFF_EMAIL, ids.staffUser],
+    );
+    await client.query("SELECT app.set_staff_password($1,$2)", [ids.staffUser, DEMO_STAFF_PASSWORD]);
+
     await client.query("COMMIT");
     return { staffToken, customerToken, deviceToken };
   } catch (error) {
@@ -113,7 +124,9 @@ export async function seedDemoData() {
 const invokedDirectly = process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href;
 if (invokedDirectly) seedDemoData().then(({ staffToken, customerToken, deviceToken }) => {
   console.log("\nTalus demo data is ready. Context assertions expire after 15 minutes.\n");
-  console.log(`Staff token (role: talus_staff): ${staffToken}`);
+  console.log("Staff sign-in (POST /auth/login):");
+  console.log(JSON.stringify({ tenantSlug: DEMO_TENANT_SLUG, email: DEMO_STAFF_EMAIL, password: DEMO_STAFF_PASSWORD }, null, 2));
+  console.log(`\nStaff token (role: talus_staff): ${staffToken}`);
   console.log(`Customer token (role: talus_customer): ${customerToken}`);
   console.log(`Device token (role: talus_device): ${deviceToken}\n`);
   console.log("Stable IDs:");
@@ -129,4 +142,4 @@ if (invokedDirectly) seedDemoData().then(({ staffToken, customerToken, deviceTok
   console.log(JSON.stringify({ bookingItemId: "<booking_item_id returned by booking>", machineId: ids.machine1 }, null, 2));
 }).catch((error) => { console.error("Demo seed failed", error); process.exit(1); });
 
-export { ids as DEMO_IDS };
+export { ids as DEMO_IDS, DEMO_TENANT_SLUG, DEMO_STAFF_EMAIL, DEMO_STAFF_PASSWORD };

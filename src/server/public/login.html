@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in · Talus Fleet OS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/css/tokens.css" />
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--talus-cream); color: var(--talus-ink); font-family: var(--talus-font-ui); padding: 24px; }
+    .card { width: 100%; max-width: 380px; background: var(--talus-paper); border: 1px solid var(--talus-line); border-radius: 16px; box-shadow: var(--talus-shadow-card); padding: 30px 28px 26px; }
+    .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+    .brand img { width: 44px; height: 44px; border-radius: 10px; }
+    .brand b { font-family: var(--talus-font-display); font-size: 24px; letter-spacing: 0.05em; display: block; }
+    .brand small { color: var(--talus-muted); font-size: 11px; letter-spacing: 0.16em; }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    p.sub { color: var(--talus-muted); font-size: 13px; margin: 0 0 20px; }
+    label { display: block; font-size: 12.5px; font-weight: 600; margin-top: 14px; }
+    input { width: 100%; margin-top: 6px; padding: 11px 12px; font-size: 14px; border: 1px solid var(--talus-line-strong); border-radius: 9px; background: #fff; min-height: 44px; }
+    input:focus-visible { outline: none; box-shadow: var(--talus-focus-ring); }
+    button[type="submit"] { width: 100%; margin-top: 20px; min-height: 46px; border-radius: 9px; border: 1px solid var(--talus-ink); background: var(--talus-ink); color: var(--talus-cream); font-weight: 700; font-size: 14px; cursor: pointer; }
+    button[type="submit"]:disabled { opacity: 0.6; cursor: not-allowed; }
+    .error { margin-top: 16px; background: var(--talus-red-bg); color: #6d2013; border-radius: 9px; padding: 10px 12px; font-size: 12.5px; }
+    .banner { margin-top: 16px; background: var(--talus-amber-bg); color: #5c3a06; border-radius: 9px; padding: 10px 12px; font-size: 12.5px; }
+    [hidden] { display: none !important; }
+    footer { margin-top: 18px; text-align: center; color: var(--talus-muted); font-size: 11px; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="brand">
+      <img src="/assets/talus-logo.png" alt="" />
+      <div><b>TALUS</b><small>FLEET OS</small></div>
+    </div>
+    <h1>Staff sign-in</h1>
+    <p class="sub">Sign in with the credentials your fleet manager gave you.</p>
+    <div class="banner" id="reasonBanner" hidden></div>
+    <form id="loginForm" novalidate>
+      <label for="tenantSlug">Business ID</label>
+      <input id="tenantSlug" name="tenantSlug" autocomplete="organization" required placeholder="e.g. red-rock-powersports" />
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="username" required />
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required />
+      <div class="error" id="loginError" role="alert" hidden></div>
+      <button type="submit" id="submitButton">Sign in</button>
+    </form>
+    <footer>Need access? Ask your fleet manager to create a staff account.</footer>
+  </main>
+  <script type="module">
+    import { saveSession } from "/assets/js/auth-client.js";
+
+    const params = new URLSearchParams(location.search);
+    const reason = params.get("reason");
+    const returnTo = params.get("returnTo") || "/fleet";
+    if (reason === "expired") {
+      const banner = document.querySelector("#reasonBanner");
+      banner.textContent = "Your session expired. Sign in again to continue.";
+      banner.hidden = false;
+    }
+
+    const form = document.querySelector("#loginForm");
+    const errorBox = document.querySelector("#loginError");
+    const submitButton = document.querySelector("#submitButton");
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      errorBox.hidden = true;
+      submitButton.disabled = true;
+      submitButton.textContent = "Signing in…";
+      try {
+        const payload = {
+          tenantSlug: form.tenantSlug.value.trim(),
+          email: form.email.value.trim(),
+          password: form.password.value,
+        };
+        const response = await fetch("/auth/login", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const messages = {
+            INVALID_CREDENTIALS: "That business ID, email, or password isn't right.",
+            STAFF_ACCESS_REVOKED: "This staff account no longer has access. Contact your manager.",
+            LOGIN_INPUT_INVALID: "Enter your business ID, email, and password.",
+          };
+          errorBox.textContent = messages[body.code] || "Sign-in failed. Please try again.";
+          errorBox.hidden = false;
+          return;
+        }
+        saveSession(body);
+        location.href = returnTo;
+      } catch (error) {
+        errorBox.textContent = "Could not reach the Talus server. Check your connection and try again.";
+        errorBox.hidden = false;
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = "Sign in";
+      }
+    });
+  </script>
+</body>
+</html>

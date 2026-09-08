@@ -1,0 +1,105 @@
+/* Shared components: cards, status badges, forms, dialogs/drawers, empty
+   states. Status color is always paired with an icon or text label -- never
+   color alone (WCAG 1.4.1). */
+
+.talus-card {
+  background: var(--talus-paper); border: 1px solid var(--talus-line);
+  border-radius: var(--talus-radius-lg); box-shadow: var(--talus-shadow-card);
+}
+.talus-card-head {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 16px 18px; border-bottom: 1px solid var(--talus-line);
+}
+.talus-card-head h2 { font-size: 16px; margin: 0; }
+.talus-card-head p { margin: 3px 0 0; font-size: 12px; color: var(--talus-muted); }
+.talus-card-body { padding: 16px 18px; }
+
+/* Status badges. Each modifier sets both background+text (>=4.5:1) and is
+   always rendered next to a text label, never as a bare color swatch. */
+.talus-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  border-radius: 999px; padding: 5px 10px; font: 700 11px var(--talus-font-ui);
+  letter-spacing: 0.02em; border: 1px solid transparent;
+}
+.talus-badge svg { width: 12px; height: 12px; }
+.talus-badge-neutral { background: #e9e1d0; color: #3d443c; border-color: var(--talus-line); }
+.talus-badge-green { background: var(--talus-green-bg); color: var(--talus-green); }
+.talus-badge-amber { background: var(--talus-amber-bg); color: var(--talus-amber); }
+.talus-badge-red { background: var(--talus-red-bg); color: var(--talus-red); }
+.talus-badge-blue { background: var(--talus-blue-bg); color: var(--talus-blue); }
+
+.talus-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+.talus-dot-green { background: var(--talus-green); }
+.talus-dot-amber { background: var(--talus-amber); }
+.talus-dot-red { background: var(--talus-red); }
+.talus-dot-neutral { background: #8d877a; }
+
+/* ---------- Forms ---------- */
+.talus-field { display: block; font-size: 12.5px; font-weight: 600; color: #3d443c; }
+.talus-field + .talus-field { margin-top: 14px; }
+.talus-field-hint { font-weight: 500; color: var(--talus-muted); display: block; margin-top: 4px; font-size: 11.5px; }
+.talus-input, .talus-select, .talus-textarea {
+  width: 100%; margin-top: 6px; padding: 11px 12px; font: 500 14px var(--talus-font-ui);
+  border: 1px solid var(--talus-line-strong); border-radius: var(--talus-radius-md); background: #fff;
+  color: var(--talus-ink); min-height: var(--talus-control-height);
+}
+.talus-textarea { min-height: 88px; resize: vertical; }
+.talus-input:invalid.is-touched { border-color: var(--talus-red); }
+.talus-radio-group { display: grid; gap: 8px; margin-top: 6px; }
+.talus-radio-option {
+  display: flex; align-items: center; gap: 10px; border: 1px solid var(--talus-line-strong);
+  border-radius: 9px; padding: 11px 12px; cursor: pointer; min-height: 44px;
+}
+.talus-radio-option:has(input:checked) { border-color: var(--talus-ink); background: #efe7d9; }
+.talus-radio-option input { width: 17px; height: 17px; flex: none; }
+
+/* ---------- Empty / loading / error states ---------- */
+.talus-empty {
+  padding: 34px 18px; text-align: center; color: var(--talus-muted); font-size: 13px;
+  display: grid; gap: 8px; justify-items: center;
+}
+.talus-empty svg { width: 30px; height: 30px; opacity: 0.6; }
+.talus-skeleton {
+  background: linear-gradient(90deg, #e9e1d0 25%, #f1ead9 37%, #e9e1d0 63%);
+  background-size: 400% 100%; animation: talus-shimmer 1.4s ease infinite; border-radius: 8px;
+}
+@keyframes talus-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+@media (prefers-reduced-motion: reduce) { .talus-skeleton { animation: none; } }
+
+/* ---------- Dialog / drawer primitives ---------- */
+.talus-dialog-backdrop {
+  position: fixed; inset: 0; background: rgba(7, 20, 28, 0.55); z-index: 800;
+}
+.talus-drawer {
+  position: fixed; top: 0; bottom: 0; right: 0; z-index: 801;
+  width: min(440px, 100vw); background: var(--talus-paper);
+  border-left: 1px solid var(--talus-line); box-shadow: var(--talus-shadow-float);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.talus-drawer-head {
+  display: flex; gap: 12px; align-items: flex-start; padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--talus-line); flex: none;
+}
+.talus-drawer-head h2 { margin: 0; font-size: 22px; }
+.talus-drawer-head p { margin: 4px 0 0; color: var(--talus-muted); font-size: 12.5px; }
+.talus-drawer-body { padding: 18px 20px; overflow-y: auto; flex: 1; min-height: 0; }
+.talus-drawer-foot { padding: 14px 20px; border-top: 1px solid var(--talus-line); flex: none; display: flex; gap: 10px; flex-wrap: wrap; }
+.talus-section-title { color: var(--talus-muted); font-size: 11px; letter-spacing: 0.08em; margin: 22px 0 10px; text-transform: uppercase; }
+.talus-section-title:first-child { margin-top: 0; }
+
+@media (max-width: 640px) {
+  .talus-drawer { width: 100vw; }
+}
+
+/* Modal dialog (centered, for confirmation/review steps) */
+.talus-modal {
+  position: fixed; inset: 0; z-index: 850; display: grid; place-items: center; padding: 20px;
+}
+.talus-modal-panel {
+  background: var(--talus-paper); border-radius: var(--talus-radius-lg); border: 1px solid var(--talus-line);
+  box-shadow: var(--talus-shadow-float); width: min(520px, 100%); max-height: calc(100vh - 40px);
+  overflow-y: auto; padding: 22px;
+}
+.talus-modal-panel h2 { margin: 0 0 6px; font-size: 19px; }
+
+[hidden] { display: none !important; }

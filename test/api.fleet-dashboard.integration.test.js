@@ -52,7 +52,7 @@ it("serves the public fleet console shell without an assertion header", async ()
   expect(response.headers["content-type"]).toContain("text/html");
   expect(response.body).toContain("LIVE FLEET");
   expect(response.body).toContain("leaflet");
-  expect(response.body).toContain("/assets/talus-logo.png");
+  expect(response.body).toContain("/assets/js/fleet-app.js");
 
   const logo = await app.inject({ method: "GET", url: "/assets/talus-logo.png" });
   expect(logo.statusCode).toBe(200);

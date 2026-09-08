@@ -1,0 +1,214 @@
+/* Talus application shell: shared nav, topbar, and small-screen tab bar for
+   fleet.html and ops.html. Layout uses an explicit CSS grid (nav column +
+   content column) rather than fixed positioning + margin offsets, so the
+   nav can never overlap page content regardless of viewport width. */
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--talus-cream);
+  color: var(--talus-ink);
+  font-family: var(--talus-font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+.talus-condensed { font-family: var(--talus-font-display); letter-spacing: 0.05em; }
+
+a { color: inherit; }
+button { font-family: inherit; }
+
+/* Visible, high-contrast focus ring for every interactive element. Never
+   rely on color alone -- the ring has an offset light halo so it reads on
+   both cream/paper and the dark map surfaces. */
+:focus { outline: none; }
+:focus-visible { outline: none; box-shadow: var(--talus-focus-ring); border-radius: var(--talus-radius-sm); }
+.talus-on-dark :focus-visible, .talus-map-wrap :focus-visible { box-shadow: var(--talus-focus-ring-dark); }
+
+.talus-skip-link {
+  position: absolute; left: 12px; top: -60px; z-index: 1000;
+  background: var(--talus-ink); color: var(--talus-cream);
+  padding: 10px 16px; border-radius: var(--talus-radius-sm); font-weight: 700; font-size: 14px;
+  transition: top 0.15s ease;
+}
+.talus-skip-link:focus { top: 12px; }
+
+/* ---------- Shell grid ---------- */
+.talus-shell {
+  display: grid;
+  grid-template-columns: var(--talus-nav-width) 1fr;
+  min-height: 100vh;
+}
+/* Flex column, not a fixed-row grid: the number of header-area siblings
+   here varies (the connection banner is only in-flow when shown), and a
+   row-count grid silently mis-sizes whichever child doesn't get the "1fr"
+   slot. With flex, main{flex:1} always claims exactly what's left,
+   regardless of how tall the topbar/banner/summary-strip actually are. */
+.talus-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100vh;
+  background: var(--talus-paper);
+}
+
+/* ---------- Nav ---------- */
+.talus-nav {
+  background: var(--talus-cream);
+  border-right: 1px solid var(--talus-line);
+  padding: 20px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  overflow-y: auto;
+}
+.talus-brand { display: flex; align-items: center; gap: 11px; padding: 0 8px; text-decoration: none; }
+.talus-brand img { width: 40px; height: 40px; object-fit: cover; border-radius: 9px; flex: none; }
+.talus-brand b { font-size: 21px; display: block; }
+.talus-brand small { display: block; color: var(--talus-muted); font-size: 10px; letter-spacing: 0.16em; margin-top: 1px; }
+
+.talus-nav-label { color: #8d877a; font-size: 10px; font-weight: 700; letter-spacing: 0.14em; padding: 0 10px 6px; }
+.talus-nav-group { display: grid; gap: 3px; }
+
+.talus-nav-item {
+  display: flex; align-items: center; gap: 11px;
+  padding: 11px 12px; border-radius: 9px;
+  color: #445; font-weight: 600; font-size: 13.5px;
+  text-decoration: none; border: 1px solid transparent;
+  min-height: 44px;
+}
+.talus-nav-item svg { width: 17px; height: 17px; flex: none; }
+.talus-nav-item:hover { background: #e4dbc8; color: var(--talus-ink); }
+.talus-nav-item[aria-current="page"] { background: var(--talus-ink); color: var(--talus-cream); }
+.talus-nav-item[aria-current="page"]:hover { background: var(--talus-ink); }
+.talus-nav-item.is-disabled {
+  color: #a39c8d; cursor: default; pointer-events: none;
+}
+.talus-nav-item.is-disabled .talus-soon {
+  margin-left: auto; font-size: 9px; letter-spacing: 0.08em; font-weight: 700;
+  background: #e4dbc8; color: #7a7362; border-radius: 999px; padding: 3px 7px;
+}
+
+.talus-nav-spacer { flex: 1; }
+.talus-nav-footer {
+  border-top: 1px solid var(--talus-line);
+  padding: 14px 10px 0; font-size: 11px; color: var(--talus-muted); line-height: 1.6;
+}
+.talus-connection-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; background: var(--talus-green); }
+.talus-connection-dot.is-degraded { background: var(--talus-amber); }
+.talus-connection-dot.is-offline { background: var(--talus-red); }
+
+/* ---------- Topbar ---------- */
+.talus-topbar {
+  display: flex; align-items: center; gap: 18px;
+  padding: 0 22px; border-bottom: 1px solid var(--talus-line);
+  background: var(--talus-paper); min-width: 0;
+}
+.talus-topbar h1 { font-size: 22px; margin: 0; white-space: nowrap; }
+.talus-topbar-meta { display: flex; align-items: center; gap: 10px; color: var(--talus-muted); font-size: 12px; min-width: 0; }
+.talus-topbar-meta strong { color: var(--talus-ink); font-weight: 700; }
+.talus-topbar-spacer { flex: 1; min-width: 8px; }
+.talus-clock { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.talus-seg { display: inline-flex; background: #e5dcc8; border: 1px solid var(--talus-line); border-radius: 9px; overflow: hidden; }
+.talus-seg button {
+  border: 0; background: transparent; color: var(--talus-ink);
+  padding: 9px 13px; font: 600 11px var(--talus-font-ui); cursor: pointer; min-height: 40px;
+}
+.talus-seg button[aria-pressed="true"] { background: var(--talus-ink); color: var(--talus-cream); }
+
+/* ---------- Buttons ---------- */
+.talus-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  border-radius: var(--talus-radius-md); padding: 10px 16px; font: 700 13px var(--talus-font-ui);
+  cursor: pointer; border: 1px solid var(--talus-line-strong); background: var(--talus-cream);
+  color: var(--talus-ink); height: var(--talus-control-height); white-space: nowrap;
+}
+.talus-btn:hover:not(:disabled) { background: #e4dbc8; }
+.talus-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.talus-btn-primary { background: var(--talus-ink); color: var(--talus-cream); border-color: var(--talus-ink); }
+.talus-btn-primary:hover:not(:disabled) { background: #142732; }
+.talus-btn-danger { background: var(--talus-red); color: #fff8f5; border-color: var(--talus-red); }
+.talus-btn-danger:hover:not(:disabled) { background: #8a2819; }
+.talus-btn-ghost { background: transparent; border-color: transparent; }
+.talus-btn-ghost:hover:not(:disabled) { background: #e4dbc8; }
+.talus-btn-sm { padding: 7px 11px; font-size: 12px; height: var(--talus-control-height-sm); }
+.talus-btn svg { width: 15px; height: 15px; flex: none; }
+.talus-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--talus-control-height); height: var(--talus-control-height); border-radius: var(--talus-radius-md); border: 1px solid var(--talus-line-strong);
+  background: var(--talus-cream); color: var(--talus-ink); cursor: pointer;
+}
+.talus-icon-btn:hover { background: #e4dbc8; }
+.talus-icon-btn svg { width: 18px; height: 18px; }
+
+/* ---------- Mobile tab bar (Map / Fleet / Incidents / Dispatch) ---------- */
+.talus-tabbar {
+  display: none;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+  background: var(--talus-cream); border-top: 1px solid var(--talus-line);
+  padding: 4px 6px calc(4px + env(safe-area-inset-bottom));
+}
+.talus-tabbar-list { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
+.talus-tabbar-item {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 8px 4px; min-height: 48px; text-decoration: none; color: #5b6570;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.02em; border: 0; background: transparent;
+}
+.talus-tabbar-item svg { width: 20px; height: 20px; }
+.talus-tabbar-item[aria-current="page"] { color: var(--talus-ink); }
+.talus-tabbar-item .talus-tabbar-dot {
+  position: absolute; transform: translate(10px, -10px);
+  width: 8px; height: 8px; border-radius: 50%; background: var(--talus-red);
+  border: 2px solid var(--talus-cream);
+}
+
+/* ---------- Toasts ---------- */
+.talus-toast-region { position: fixed; right: 18px; bottom: 18px; z-index: 900; display: grid; gap: 10px; max-width: min(380px, calc(100vw - 36px)); }
+.talus-toast {
+  background: var(--talus-ink); color: var(--talus-cream); border-radius: 10px;
+  padding: 13px 15px; box-shadow: var(--talus-shadow-float); font-size: 13px; line-height: 1.5;
+  display: flex; gap: 10px; align-items: flex-start;
+}
+.talus-toast.is-error { background: var(--talus-red); }
+.talus-toast.is-success { background: var(--talus-green); }
+.talus-toast button { background: transparent; border: 0; color: inherit; opacity: 0.75; cursor: pointer; flex: none; }
+
+/* ---------- Generic banner (offline / stale / error states) ---------- */
+.talus-banner {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 16px; font-size: 12.5px; border-bottom: 1px solid var(--talus-line);
+  background: var(--talus-amber-bg); color: #5c3a06;
+}
+.talus-banner.is-critical { background: var(--talus-red-bg); color: #6d2013; }
+.talus-banner button { margin-left: auto; }
+
+.talus-visually-hidden {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+
+/* ================= Responsive ================= */
+
+/* 1024px tablet landscape: collapse nav to an icon rail. */
+@media (max-width: 1080px) {
+  .talus-shell { grid-template-columns: var(--talus-nav-width-rail) 1fr; }
+  .talus-nav { padding: 16px 10px; align-items: center; }
+  .talus-brand { padding: 0; justify-content: center; }
+  .talus-brand-copy, .talus-nav-label, .talus-nav-item span, .talus-nav-footer-copy { display: none; }
+  .talus-nav-item { justify-content: center; padding: 12px; }
+  .talus-nav-item .talus-soon { display: none; }
+}
+
+/* 820px portrait tablet and below: nav becomes a bottom tab bar, content
+   gets full width, topbar wraps instead of overflowing. */
+@media (max-width: 860px) {
+  .talus-shell { grid-template-columns: 1fr; }
+  .talus-nav { display: none; }
+  .talus-tabbar { display: block; }
+  .talus-content { padding-bottom: var(--talus-tabbar-height); }
+  .talus-topbar { flex-wrap: wrap; height: auto; min-height: var(--talus-topbar-height); padding: 10px 14px; row-gap: 8px; }
+  .talus-topbar h1 { font-size: 19px; }
+}
+
+@media (max-width: 480px) {
+  .talus-topbar-meta { display: none; }
+}

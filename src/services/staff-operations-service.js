@@ -28,7 +28,15 @@ export async function getDispatchGateWorkflow(client, { bookingItemId, outboundI
        EXISTS (SELECT 1 FROM app.inspection i
                 WHERE i.tenant_id=${tenant} AND i.booking_item_id=$1
                   AND i.inspection_type='outbound' AND i.status='completed'
-                  AND ($2::uuid IS NULL OR i.inspection_id=$2)) AS outbound_inspection_ready,
+                  AND ($2::uuid IS NULL OR i.inspection_id=$2)
+                  AND NOT EXISTS (SELECT 1 FROM app.inspection_item ii WHERE ii.tenant_id=${tenant} AND ii.inspection_id=i.inspection_id AND ii.condition='fail')
+              ) AS outbound_inspection_ready,
+       EXISTS (SELECT 1 FROM app.inspection i
+                WHERE i.tenant_id=${tenant} AND i.booking_item_id=$1
+                  AND i.inspection_type='outbound' AND i.status='completed'
+                  AND ($2::uuid IS NULL OR i.inspection_id=$2)
+                  AND EXISTS (SELECT 1 FROM app.inspection_item ii WHERE ii.tenant_id=${tenant} AND ii.inspection_id=i.inspection_id AND ii.condition='fail')
+              ) AS outbound_inspection_unsafe,
        EXISTS (SELECT 1 FROM app.booking_driver d WHERE d.tenant_id=${tenant} AND d.booking_item_id=$1)
        AND NOT EXISTS (
          SELECT 1 FROM app.booking_driver d
@@ -58,17 +66,25 @@ export async function assertDispatchGateWorkflow(client, input) {
   return gate;
 }
 
-export async function getDispatchBoardWorkflow(client, { date } = {}) {
+export async function getDispatchBoardWorkflow(client, { date, categoryLocationId, bookingItemId } = {}) {
+  // Day boundaries are computed in the OPERATING LOCATION's own timezone
+  // (app.location.timezone_name), not the database session's timezone --
+  // otherwise a US-timezone yard reviewing "today" can silently see
+  // yesterday's or tomorrow's pickups depending on where Postgres runs.
+  // Each booking item can be at a different location, so boundaries are
+  // computed per-row via a LATERAL join rather than once for the request.
   const rows = await client.query(
     `SELECT bi.booking_item_id, b.booking_id, b.booking_reference, b.state AS booking_state,
             bi.state AS booking_item_state, terms.category_location_id, terms.scheduled_start_at, terms.scheduled_end_at,
-            customer.display_name AS customer_name, product.display_name AS product_name,
+            loc.timezone_name, customer.display_name AS customer_name, product.display_name AS product_name,
             assignment.machine_id, assignment.fleet_number,
             EXISTS (SELECT 1 FROM app.booking_item_deposit_hold h
                      WHERE h.tenant_id=b.tenant_id AND h.booking_item_id=bi.booking_item_id) AS deposit_ready,
             EXISTS (SELECT 1 FROM app.inspection i WHERE i.tenant_id=b.tenant_id
                      AND i.booking_item_id=bi.booking_item_id AND i.inspection_type='outbound'
-                     AND i.status='completed') AS outbound_inspection_ready,
+                     AND i.status='completed'
+                     AND NOT EXISTS (SELECT 1 FROM app.inspection_item ii WHERE ii.tenant_id=b.tenant_id AND ii.inspection_id=i.inspection_id AND ii.condition='fail')
+                    ) AS outbound_inspection_ready,
             EXISTS (SELECT 1 FROM app.booking_driver d WHERE d.tenant_id=b.tenant_id AND d.booking_item_id=bi.booking_item_id)
             AND NOT EXISTS (
               SELECT 1 FROM app.booking_driver d
@@ -80,33 +96,69 @@ export async function getDispatchBoardWorkflow(client, { date } = {}) {
                       AND w.waiver_policy_version_id=(SELECT tenant_waiver_policy_id FROM app.tenant_waiver_policy p WHERE p.tenant_id=b.tenant_id ORDER BY p.version_number DESC LIMIT 1)
                  )
             ) AS waiver_ready,
-            EXISTS (SELECT 1 FROM app.trip t WHERE t.tenant_id=b.tenant_id
-                     AND t.booking_item_id=bi.booking_item_id AND t.ended_at IS NULL) AS active_trip
+            active_trip.trip_id IS NOT NULL AS active_trip,
+            CASE
+              WHEN bi.state IN ('closed','cancelled','no_show') THEN 'closed'
+              WHEN bi.state = 'returned' THEN 'settlement_pending'
+              WHEN active_trip.trip_id IS NOT NULL AND terms.scheduled_end_at < day.day_start THEN 'overdue'
+              WHEN active_trip.trip_id IS NOT NULL AND terms.scheduled_end_at >= day.day_start AND terms.scheduled_end_at < day.day_end THEN 'return_due'
+              WHEN active_trip.trip_id IS NOT NULL THEN 'on_rent'
+              ELSE 'pickup'
+            END AS dispatch_bucket
        FROM app.booking_item bi
        JOIN app.booking b ON b.tenant_id=bi.tenant_id AND b.booking_id=bi.booking_id
        JOIN app.booking_item_terms_revision terms ON terms.tenant_id=bi.tenant_id
             AND terms.booking_item_terms_revision_id=bi.current_terms_revision_id
+       JOIN app.category_location cl ON cl.tenant_id=terms.tenant_id AND cl.category_location_id=terms.category_location_id
+       JOIN app.location loc ON loc.tenant_id=cl.tenant_id AND loc.location_id=cl.location_id
        LEFT JOIN app.booking_customer bc ON bc.tenant_id=b.tenant_id AND bc.booking_id=b.booking_id
        LEFT JOIN app.customer customer ON customer.tenant_id=bc.tenant_id AND customer.customer_id=bc.customer_id
-       LEFT JOIN app.rental_product product ON product.tenant_id=terms.tenant_id
-            AND product.category_location_id=terms.category_location_id AND product.active
+       LEFT JOIN LATERAL (
+         SELECT p.display_name FROM app.rental_product p
+          WHERE p.tenant_id=terms.tenant_id AND p.category_location_id=terms.category_location_id AND p.active
+          ORDER BY p.rental_product_id LIMIT 1
+       ) product ON true
        LEFT JOIN LATERAL (
          SELECT o.machine_id, m.fleet_number FROM app.machine_occupancy o
          JOIN app.machine m ON m.tenant_id=o.tenant_id AND m.machine_id=o.machine_id
          WHERE o.tenant_id=bi.tenant_id AND o.booking_item_id=bi.booking_item_id
            AND o.occupancy_kind='rental' AND o.blocking LIMIT 1
        ) assignment ON true
+       LEFT JOIN LATERAL (
+         SELECT t.trip_id FROM app.trip t
+          WHERE t.tenant_id=b.tenant_id AND t.booking_item_id=bi.booking_item_id AND t.ended_at IS NULL
+          LIMIT 1
+       ) active_trip ON true
+       CROSS JOIN LATERAL (
+         SELECT (COALESCE($1::date, (clock_timestamp() AT TIME ZONE loc.timezone_name)::date))::timestamp AT TIME ZONE loc.timezone_name AS day_start,
+                ((COALESCE($1::date, (clock_timestamp() AT TIME ZONE loc.timezone_name)::date)) + 1)::timestamp AT TIME ZONE loc.timezone_name AS day_end
+       ) day
       WHERE b.tenant_id=${tenant}
-        AND ($1::date IS NULL OR terms.scheduled_start_at >= $1::date
-             AND terms.scheduled_start_at < ($1::date + interval '1 day'))
-      ORDER BY terms.scheduled_start_at, bi.booking_item_id`,
-    [date ?? null],
+        AND ($2::uuid IS NULL OR terms.category_location_id=$2)
+        AND ($3::uuid IS NULL OR bi.booking_item_id=$3)
+        AND (
+          $3::uuid IS NOT NULL
+          -- pickups and returns scheduled for the selected day
+          OR (terms.scheduled_start_at >= day.day_start AND terms.scheduled_start_at < day.day_end)
+          OR (terms.scheduled_end_at >= day.day_start AND terms.scheduled_end_at < day.day_end)
+          -- anything currently on rent or overdue stays visible regardless of pickup date
+          OR active_trip.trip_id IS NOT NULL
+        )
+      ORDER BY CASE
+                 WHEN bi.state IN ('closed','cancelled','no_show') THEN 5
+                 WHEN bi.state = 'returned' THEN 4
+                 WHEN active_trip.trip_id IS NOT NULL AND terms.scheduled_end_at < day.day_start THEN 0
+                 WHEN active_trip.trip_id IS NOT NULL THEN 2
+                 ELSE 1
+               END,
+               terms.scheduled_start_at, bi.booking_item_id`,
+    [date ?? null, categoryLocationId ?? null, bookingItemId ?? null],
   );
-  return { items: rows.rows };
+  return { items: rows.rows, generatedAt: new Date().toISOString() };
 }
 
 export async function getBookingItemWorkflow(client, { bookingItemId }) {
-  const board = await getDispatchBoardWorkflow(client, {});
+  const board = await getDispatchBoardWorkflow(client, { bookingItemId });
   const item = board.items.find((row) => row.booking_item_id === bookingItemId);
   if (!item) throw new DomainError("BOOKING_ITEM_NOT_FOUND", 404);
   const gate = await getDispatchGateWorkflow(client, { bookingItemId });
@@ -142,7 +194,9 @@ export async function getReturnSummaryWorkflow(client, { bookingItemId }) {
             out_i.odometer_miles AS outbound_odometer_miles,
             in_i.inspection_id AS inbound_inspection_id, in_i.fuel_pct AS inbound_fuel_pct,
             in_i.odometer_miles AS inbound_odometer_miles,
-            hold.journal_entry_id AS hold_journal_entry_id, hold.amount_cents AS hold_amount_cents
+            hold.journal_entry_id AS hold_journal_entry_id, hold.amount_cents AS hold_amount_cents,
+            settlement.deposit_hold_settlement_id, settlement.captured_cents, settlement.released_cents,
+            settlement.excess_receivable_cents, settlement.settled_at
        FROM app.booking_item bi
        LEFT JOIN app.trip t ON t.tenant_id=bi.tenant_id AND t.booking_item_id=bi.booking_item_id
        LEFT JOIN app.machine m ON m.tenant_id=t.tenant_id AND m.machine_id=t.machine_id
@@ -154,9 +208,10 @@ export async function getReturnSummaryWorkflow(client, { bookingItemId }) {
                            AND i.status='completed' ORDER BY i.completed_at DESC LIMIT 1) in_i ON true
        LEFT JOIN app.booking_item_deposit_hold hold ON hold.tenant_id=bi.tenant_id
             AND hold.booking_item_id=bi.booking_item_id
+       LEFT JOIN app.deposit_hold_settlement settlement ON settlement.tenant_id=bi.tenant_id AND settlement.trip_id=t.trip_id
       WHERE bi.tenant_id=${tenant} AND bi.booking_item_id=$1
       ORDER BY t.started_at DESC NULLS LAST LIMIT 1`, [bookingItemId],
   )).rows[0];
   if (!summary) throw new DomainError("BOOKING_ITEM_NOT_FOUND", 404);
-  return summary;
+  return { ...summary, isSettled: summary.deposit_hold_settlement_id != null };
 }

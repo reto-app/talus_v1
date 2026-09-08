@@ -1,0 +1,123 @@
+.fleet-summary-strip {
+  display: flex; gap: 10px; padding: 12px 20px; overflow-x: auto;
+  border-bottom: 1px solid var(--talus-line); background: var(--talus-paper);
+}
+.fleet-stat {
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px;
+  border: 1px solid var(--talus-line-strong); background: #fff; border-radius: var(--talus-radius-md);
+  padding: 9px 14px; cursor: pointer; min-width: 96px; height: 60px; flex: none;
+}
+.fleet-stat[aria-pressed="true"] { background: var(--talus-ink); color: var(--talus-cream); border-color: var(--talus-ink); }
+.fleet-stat b { font: 700 22px var(--talus-font-display); }
+.fleet-stat small { font-size: 10px; letter-spacing: 0.05em; color: inherit; opacity: 0.75; }
+.fleet-stat.is-loading b { visibility: hidden; }
+
+.fleet-main {
+  display: grid; grid-template-columns: 1fr 350px; min-height: 0;
+  flex: 1;
+}
+.fleet-map-region { position: relative; min-width: 0; background: var(--talus-night); }
+.fleet-map { position: absolute; inset: 0; width: 100%; height: 100%; }
+.fleet-map .leaflet-control-zoom a { background: #102336 !important; color: #e8f0fa !important; border-color: #28455d !important; }
+.fleet-map .leaflet-control-attribution { background: #08131fbb !important; color: var(--talus-muted-on-dark) !important; }
+.fleet-map .leaflet-control-attribution a { color: #6fbaf6 !important; }
+
+.fleet-map-toolbar {
+  position: absolute; z-index: 500; top: 14px; left: 14px; right: 14px;
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-start; pointer-events: none;
+}
+.fleet-map-toolbar > * { pointer-events: auto; }
+.fleet-chip-group { display: flex; align-items: center; gap: 6px; background: #0b1826e8; border: 1px solid var(--talus-night-line); border-radius: var(--talus-radius-md); padding: 0 4px; height: var(--talus-control-height); }
+.fleet-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0; background: transparent; color: var(--talus-muted-on-dark); border-radius: calc(var(--talus-radius-md) - 3px);
+  padding: 0 11px; font: 700 11px var(--talus-font-ui); cursor: pointer; height: var(--talus-control-height-sm);
+}
+.fleet-chip[aria-pressed="true"] { background: #1c3348; color: #fff; }
+.fleet-search { display: flex; align-items: center; gap: 6px; background: #0b1826e8; border: 1px solid var(--talus-night-line); border-radius: var(--talus-radius-md); padding: 0 10px; height: var(--talus-control-height); }
+.fleet-search input { background: transparent; border: 0; color: #e8f0fa; font-size: 12.5px; min-width: 140px; }
+.fleet-search input::placeholder { color: var(--talus-muted-on-dark); }
+.fleet-search svg { color: var(--talus-muted-on-dark); width: 15px; height: 15px; flex: none; }
+
+.fleet-map-legend {
+  position: absolute; z-index: 500; bottom: 14px; left: 14px;
+  background: #0b1826e8; border: 1px solid var(--talus-night-line); border-radius: 12px; padding: 12px 14px;
+  color: var(--talus-night-text); font-size: 11px; display: grid; gap: 6px; max-width: 220px;
+}
+.fleet-map-legend-row { display: flex; align-items: center; gap: 7px; }
+.fleet-map-controls { position: absolute; z-index: 500; bottom: 14px; right: 14px; display: flex; gap: 8px; }
+.fleet-map-controls button {
+  background: #0b1826e8; border: 1px solid var(--talus-night-line); border-radius: 9px;
+  color: #c5d4e1; padding: 9px 12px; font: 700 11px var(--talus-font-ui); cursor: pointer; min-height: 40px;
+}
+.fleet-map-controls button[aria-pressed="true"] { background: #176b6f; border-color: #48d69a; color: #fff; }
+
+.fleet-map-status {
+  position: absolute; inset: 0; display: grid; place-items: center; z-index: 400;
+  color: var(--talus-night-text); background: var(--talus-night); text-align: center; padding: 20px;
+}
+.fleet-map-status.is-hidden { display: none; }
+
+.vehicle-pin { display: flex; align-items: center; gap: 6px; filter: drop-shadow(0 2px 5px #000); }
+.vehicle-pin i { display: block; width: 16px; height: 16px; border: 3px solid #fff; border-radius: 50%; background: var(--talus-green); box-shadow: 0 0 0 3px #12332d; }
+.vehicle-pin.is-urgent i { background: var(--talus-red); box-shadow: 0 0 0 3px #54221e; }
+.vehicle-pin.is-stale i { background: #b8860c; box-shadow: 0 0 0 3px #43350f; border-style: dashed; }
+.vehicle-pin.is-maintenance i { background: #778797; box-shadow: 0 0 0 3px #263647; }
+.vehicle-pin.is-selected i { box-shadow: 0 0 0 3px #fff, 0 0 0 6px #7fd4ff; }
+.vehicle-pin span { background: #0b1826; color: #fff; border: 1px solid #48657c; border-radius: 5px; padding: 4px 6px; font: 700 11px var(--talus-font-display); letter-spacing: 0.06em; white-space: nowrap; }
+.vehicle-cluster { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: #1c3348; border: 2px solid #48657c; color: #fff; font: 700 12px var(--talus-font-ui); }
+
+/* Incident rail */
+.fleet-incident-rail { border-left: 1px solid var(--talus-line); background: var(--talus-paper); display: flex; flex-direction: column; min-height: 0; }
+.fleet-rail-head { padding: 16px 16px 12px; border-bottom: 1px solid var(--talus-line); display: flex; align-items: center; gap: 10px; }
+.fleet-rail-head h2 { font-size: 16px; margin: 0; }
+.fleet-rail-filters { display: flex; gap: 6px; margin-left: auto; }
+.fleet-rail-list { overflow-y: auto; padding: 10px; display: grid; gap: 9px; flex: 1; min-height: 0; }
+
+.incident-card { border-radius: 11px; border: 1px solid var(--talus-line); border-left: 4px solid var(--talus-amber); background: #f4ead3; padding: 12px 13px; }
+.incident-card.is-critical { border-left-color: var(--talus-red); background: var(--talus-red-bg); }
+.incident-card.is-high { border-left-color: #c1543a; background: #f3dfd8; }
+.incident-card-top { display: flex; align-items: center; gap: 8px; }
+.incident-card-top b { font: 700 15px var(--talus-font-display); letter-spacing: 0.03em; }
+.incident-card-top time { margin-left: auto; color: var(--talus-muted); font-size: 10.5px; }
+.incident-card p { font-size: 12px; line-height: 1.5; color: #4e585d; margin: 7px 0 10px; }
+.incident-card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* List view (accessible non-map alternative + fallback) */
+.fleet-list-panel { position: absolute; inset: 0; background: var(--talus-paper); overflow-y: auto; padding: 14px; }
+.fleet-list-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.fleet-list-table th { text-align: left; font-size: 10.5px; letter-spacing: 0.06em; color: var(--talus-muted); padding: 8px 10px; border-bottom: 1px solid var(--talus-line); }
+.fleet-list-table td { padding: 10px; border-bottom: 1px solid var(--talus-line); vertical-align: top; }
+.fleet-list-row { cursor: pointer; }
+.fleet-list-row:hover { background: #efe7d9; }
+.fleet-list-row:focus-visible { outline: none; box-shadow: inset var(--talus-focus-ring); }
+
+/* Vehicle / incident detail drawer, scoped to the map region so it can
+   never cover the incident rail. */
+.fleet-map-region .talus-drawer { position: absolute; box-shadow: -18px 0 36px rgba(0,0,0,0.35); }
+.vehicle-metrics { display: grid; grid-template-columns: repeat(3,1fr); gap: 9px; }
+.vehicle-metric { background: #e9e1d0; border: 1px solid var(--talus-line); border-radius: 9px; padding: 11px; }
+.vehicle-metric label { display: block; color: var(--talus-muted); font-size: 9px; letter-spacing: 0.08em; }
+.vehicle-metric b { font: 700 24px var(--talus-font-display); display: block; margin-top: 4px; }
+.vehicle-gauge { margin: 14px 0; }
+.vehicle-gauge-row { display: flex; justify-content: space-between; font-size: 12px; color: #4f5b60; }
+.vehicle-bar { height: 8px; background: #d8cfbc; border-radius: 999px; margin-top: 7px; overflow: hidden; }
+.vehicle-bar span { height: 100%; display: block; border-radius: 999px; background: var(--talus-green); }
+.vehicle-bar.is-warn span { background: var(--talus-amber); }
+.vehicle-chart { height: 130px; background: #ede5d5; border: 1px solid var(--talus-line); border-radius: 9px; padding: 10px; }
+.vehicle-chart svg { width: 100%; height: 100%; overflow: visible; }
+.vehicle-timeline-row { padding: 9px 0; border-bottom: 1px solid var(--talus-line); font-size: 12px; }
+.vehicle-timeline-row span { color: var(--talus-muted); }
+
+@media (max-width: 1080px) {
+  .fleet-main { grid-template-columns: 1fr 300px; }
+}
+@media (max-width: 860px) {
+  /* Only one of map-region/incident-rail is ever visible at a time on
+     mobile (toggled by the tab bar), so whichever one is left in flow
+     just fills the single 1fr row -- no fixed-position height math needed. */
+  .fleet-main { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+  .fleet-incident-rail:not(.is-active-tab) { display: none; }
+  .fleet-map-region:not(.is-active-tab) { display: none; }
+  .fleet-list-panel:not(.is-active-tab) { display: none; }
+}
